@@ -12,6 +12,10 @@ from .models.auth import TokenInfo
 
 
 def _md5(text: str) -> str:
+    # The Siseli Cloud API requires the MD5 hash of the plaintext password.
+    # This is a protocol constraint imposed by the server, not a local
+    # password-storage decision.  The hash is sent over HTTPS and is never
+    # stored on disk.
     return hashlib.md5(text.encode()).hexdigest()  # noqa: S324
 
 
