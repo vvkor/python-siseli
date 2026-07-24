@@ -1,3 +1,16 @@
+Metadata-Version: 2.4
+Name: python-siseli
+Version: 0.1.0
+Summary: Python SDK for Siseli Cloud
+License: MIT
+Requires-Python: >=3.11
+Description-Content-Type: text/markdown
+Requires-Dist: httpx>=0.27
+Provides-Extra: dev
+Requires-Dist: pytest>=8; extra == "dev"
+Requires-Dist: pytest-asyncio>=0.23; extra == "dev"
+Requires-Dist: respx>=0.21; extra == "dev"
+
 # python-siseli
 
 Python SDK for [Siseli Cloud](https://solar.siseli.com).

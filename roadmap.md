@@ -108,20 +108,31 @@ Implement the minimum feature set required to communicate with Siseli Cloud.
 
 Features:
 
-- authentication
-- token handling
-- device discovery
-- device details
-- latest telemetry
-- energy flow
+- [x] authentication
+- [x] token handling
+- [x] device discovery
+- [x] device details
+- [x] latest telemetry
+- [x] energy flow
 
 Goal:
 
 A developer should be able to authenticate and retrieve the current state of a device with only a few lines of Python.
 
+Deliverables:
+
+- [x] `siseli/` package (`pyproject.toml`, `siseli/__init__.py`)
+- [x] `siseli/const.py` — base URL, defaults
+- [x] `siseli/exceptions.py` — exception hierarchy
+- [x] `siseli/models/` — typed dataclasses (`TokenInfo`, `Device`, `DeviceState`, `EnergyFlow`, `FlowNode`, `StateAttribute`)
+- [x] `siseli/auth.py` — `Auth` class (MD5 login, token expiry check)
+- [x] `siseli/device.py` — `fetch_device_list`, `fetch_device_details`
+- [x] `siseli/state.py` — `fetch_device_state`, `fetch_energy_flow`
+- [x] `siseli/client.py` — `SiseliClient` public entry point (context manager, auto-reauth)
+
 Status:
 
-**Not Started**
+**Done**
 
 ---
 
