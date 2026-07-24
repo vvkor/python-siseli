@@ -20,6 +20,7 @@ from .config import (
     fetch_device_config,
     fetch_device_config_batch_details,
     fetch_device_configs,
+    write_device_config,
 )
 from .const import BASE_URL, DEFAULT_DATA_SOURCE, DEFAULT_PAGE_SIZE, DEFAULT_TIMEOUT
 from .dashboard import (
@@ -270,6 +271,22 @@ class SiseliClient:
 
     async def get_device_config_batch(self, batch_read_id: str) -> ConfigBatchRead:
         return await fetch_device_config_batch_details(self._request, batch_read_id)
+
+    async def set_device_config(
+        self,
+        device_id: str,
+        *,
+        key: str,
+        value: Any,
+        config_id: str = "",
+    ) -> AttributeMetadata:
+        return await write_device_config(
+            self._request,
+            device_id,
+            key=key,
+            value=value,
+            config_id=config_id,
+        )
 
     async def get_stations(
         self,

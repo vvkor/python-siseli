@@ -187,6 +187,7 @@ Accept: application/json
 | --- | --- | --- | --- | --- | --- | --- |
 | `GET` | `/apis/dictionary/data/alarm` | Получение справочника `alarm`. | `—` | `—` | `dict` | — |
 | `GET` | `/apis/dictionary/data/device` | Получение справочника `device`. | `—` | `—` | `dict` | — |
+| `GET` | `/apis/dictionary/data/dtu` | Получение справочника `dtu`. | `—` | `—` | `dict` | Обнаружен в permissions ответа `/apis/login/account` |
 | `GET` | `/apis/dictionary/data/report` | Получение справочника `report`. | `—` | `—` | `dict` | — |
 | `GET` | `/apis/dictionary/data/simcard` | Получение справочника `simcard`. | `—` | `—` | `dict` | — |
 | `GET` | `/apis/dictionary/data/station` | Получение справочника `station`. | `—` | `—` | `dict` | — |
@@ -260,6 +261,9 @@ Accept: application/json
 | `GET` | `/apis/remote/device/configs/read/details` | Детали пакетного чтения удаленной конфигурации. | `batchReadId` | `—` | `dict` | — |
 | `GET` | `/apis/remote/device/state/report/fast/supported` | Проверка поддержки быстрого удаленного отчета состояния. | `deviceId` | `—` | `bool` | — |
 | `POST` | `/apis/remote/device/config/read` | Удаленное чтение параметра или конфигурации устройства. | `deviceId` | `id, key` | `dict` | В HAR встречался код ошибки 71301 |
+| `POST` | `/apis/remote/device/config/write` | Удаленная запись параметра конфигурации устройства. | `deviceId` | `id, key, value` | `dict` | Обнаружен в permissions ответа `/apis/login/account` |
+| `POST` | `/apis/remote/device/config/write/records` | История операций удаленной записи конфигурации. | `—` | `count, deviceId, fromTime, key, orderByCreatedAtAsc, page, state, toTime` | `dict` | Обнаружен в permissions ответа `/apis/login/account` |
+| `POST` | `/apis/remote/device/configs/cache/clear` | Очистка кэша удаленных конфигураций устройства. | `deviceId` | `—` | `NoneType` | Обнаружен в permissions ответа `/apis/login/account` |
 | `POST` | `/apis/remote/device/configs/cache/get` | Получение кэша удаленных конфигураций устройства. | `deviceId` | `—` | `dict` | POST без JSON-полей в теле в наблюдаемом вызове |
 | `POST` | `/apis/remote/device/configs/read` | Операции удаленного управления устройствами и DTU. | `deviceId` | `—` | `dict` | POST без JSON-полей в теле в наблюдаемом вызове |
 | `POST` | `/apis/remote/dtu/restart` | Удаленный перезапуск DTU. | `dtuId` | `—` | `NoneType` | POST без JSON-полей в теле в наблюдаемом вызове |

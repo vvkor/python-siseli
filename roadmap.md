@@ -142,7 +142,7 @@ Expand the SDK to support the remaining public functionality.
 
 Status:
 
-**In Progress**
+**Done**
 
 ### Device State
 
@@ -161,7 +161,7 @@ Status:
 - [x] read configuration
 - [x] cached configuration
 - [x] batch reads
-- [ ] configuration writes
+- [x] configuration writes
 
 ### Stations
 
@@ -184,7 +184,7 @@ Status:
 
 - [x] lookup tables
 - [x] enums
-- [ ] metadata
+- [x] metadata
 
 ---
 
