@@ -155,7 +155,7 @@ async def test_fetch_config_cache_parses_metadata() -> None:
     assert batch.id == 'batch-1'
     assert 'powerSavingEnable' in batch.target_config
     assert updated.key == 'powerSavingEnable'
-    assert updated.value == '0'
+    assert updated.is_writable_config_attribute is True
 
 
 @pytest.mark.asyncio
