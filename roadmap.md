@@ -81,24 +81,24 @@ Understand and document the Siseli Cloud API.
 
 Tasks:
 
-- analyze HAR captures;
-- identify endpoints;
-- document requests;
-- document responses;
-- identify authentication flow;
-- identify required headers;
-- classify API domains;
-- discover undocumented endpoints.
+- [x] analyze HAR captures (`solar.siseli.com.har` — 405 requests);
+- [x] identify endpoints (108 unique endpoints discovered);
+- [x] document requests;
+- [x] document responses;
+- [x] identify authentication flow (`POST /apis/login/account` → `IOT-Token`);
+- [x] identify required headers (`IOT-Token`, `IOT-Time-Zone`);
+- [x] classify API domains (20 domains: alarm, dashboard, device, deviceState, station, etc.);
+- [ ] discover undocumented endpoints.
 
 Deliverables:
 
-- API documentation
-- endpoint catalog
-- reverse engineering notes
+- [x] API documentation (`docs/api.md`)
+- [x] endpoint catalog (108 endpoints across 20 domains)
+- [x] reverse engineering notes (embedded in `docs/api.md`)
 
 Status:
 
-**In Progress**
+**Done**
 
 ---
 
@@ -119,11 +119,19 @@ Goal:
 
 A developer should be able to authenticate and retrieve the current state of a device with only a few lines of Python.
 
+Status:
+
+**Not Started**
+
 ---
 
 ## Phase 3 — Full SDK
 
 Expand the SDK to support the remaining public functionality.
+
+Status:
+
+**Not Started**
 
 ### Device State
 
@@ -172,6 +180,14 @@ Expand the SDK to support the remaining public functionality.
 ## Phase 4 — Advanced Features
 
 Investigate advanced capabilities that are not yet fully understood.
+
+Goal:
+
+Unlock functionality beyond the standard public API surface.
+
+Status:
+
+**Not Started**
 
 ### Fast Reporting
 
