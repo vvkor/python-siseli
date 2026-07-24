@@ -87,7 +87,7 @@ Tasks:
 - [x] document responses;
 - [x] identify authentication flow (`POST /apis/login/account` → `IOT-Token`);
 - [x] identify required headers (`IOT-Token`, `IOT-Time-Zone`);
-- [x] classify API domains (20 domains: alarm, dashboard, device, deviceState, station, etc.);
+- [x] classify API domains (25 domains: alarm, dashboard, device, deviceState, station, etc.);
 - [ ] discover undocumented endpoints.
 
 Deliverables:
