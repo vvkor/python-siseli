@@ -81,7 +81,7 @@ Understand and document the Siseli Cloud API.
 
 Tasks:
 
-- [x] analyze HAR captures (`solar.siseli.com.har` — 405 requests);
+- [x] analyze HAR captures (657 requests captured locally, not committed);
 - [x] identify endpoints (108 unique endpoints discovered);
 - [x] document requests;
 - [x] document responses;
