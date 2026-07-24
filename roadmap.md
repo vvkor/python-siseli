@@ -21,7 +21,7 @@ The Home Assistant integration should contain as little API-specific logic as po
 
 # Project Architecture
 
-```
+```text
                     Siseli Cloud
                          │
                          ▼
@@ -204,7 +204,7 @@ Status:
 
 Research the following endpoints:
 
-```
+```text
 GET  /remote/device/state/report/fast/supported
 POST /remote/device/state/report/fast/start
 POST /remote/device/state/report/fast/stop
@@ -220,7 +220,7 @@ Increase telemetry refresh rate while the client is actively monitoring a device
 
 Research:
 
-```
+```text
 POST /remote/device/passthrough
 ```
 
@@ -248,7 +248,7 @@ For every parameter identify:
 
 Planned structure:
 
-```
+```text
 siseli/
 
     client.py
@@ -271,7 +271,7 @@ siseli/
 
 Future additions may include:
 
-```
+```text
 passthrough.py
 firmware.py
 dashboard.py
@@ -282,7 +282,7 @@ dictionary.py
 
 # Home Assistant Architecture
 
-```
+```text
 Config Flow
       │
       ▼
@@ -389,6 +389,62 @@ Documentation should include:
 - architecture
 - examples
 - changelog
+
+---
+
+# HA Integration Support Requirements (SDK-side)
+
+Although HACS and Home Assistant Quality Scale requirements apply directly to **ha-siseli**,  
+the SDK must provide a stable and integration-friendly foundation.
+
+## Release & Compatibility Policy
+
+- [ ] semantic versioning (`vX.Y.Z`) for SDK releases;
+- [ ] `CHANGELOG.md` maintained for every release;
+- [ ] clear compatibility notes for `ha-siseli` (recommended minimum SDK version);
+- [ ] breaking changes are explicitly documented.
+
+## Stable Public API
+
+- [ ] define and freeze public API surface (`SiseliClient` and core models);
+- [ ] avoid silent behavioral changes in critical methods;
+- [ ] provide a deprecation path before removing public methods/fields.
+
+## Error Model for HA Mapping
+
+- [ ] keep exception hierarchy explicit and stable:
+  - authentication errors;
+  - transport/network errors;
+  - API response/validation errors;
+  - rate limit / temporary unavailability errors.
+- [ ] ensure exceptions can be deterministically mapped by HA integration
+      (`reauth`, `retry`, `mark unavailable`, etc.).
+
+## Reliability Controls
+
+- [ ] explicit timeout configuration;
+- [ ] retry/backoff strategy for transient failures;
+- [ ] safe defaults suitable for periodic polling from DataUpdateCoordinator;
+- [ ] token refresh/reauth behavior remains predictable under load.
+
+## Security & Diagnostics Safety
+
+- [ ] never expose credentials/tokens in logs or exception messages;
+- [ ] provide sanitized debug output patterns for integration diagnostics use;
+- [ ] document sensitive fields that must always be redacted.
+
+## Contract Tests for HA-Critical Paths
+
+- [ ] contract tests for device discovery payloads;
+- [ ] contract tests for telemetry/state payloads used by MVP entities;
+- [ ] contract tests for auth/token lifecycle behavior;
+- [ ] regression tests for parsing changes that may break HA entity mapping.
+
+## Documentation for Integrators
+
+- [ ] integration-oriented usage examples (polling loop, reconnect handling);
+- [ ] “error handling cookbook” for HA-style coordinators;
+- [ ] upgrade notes for each breaking/non-breaking release.
 
 ---
 
