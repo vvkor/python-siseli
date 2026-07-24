@@ -1,10 +1,12 @@
-"""State and energy-flow models."""
+"""State, attribute, and energy-flow models."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
+
+from .common import LookupValue
 
 
 @dataclass
@@ -20,10 +22,53 @@ class StateAttribute:
 
 
 @dataclass
+class AttributeMetadata:
+    """Metadata describing a state or configuration attribute."""
+
+    key: str
+    name: str
+    name_display: str
+    unit: str
+    value_type: int | None
+    category: int | None
+    operation_mode: int | None
+    is_hidden: bool | None
+    is_config_attribute: bool | None
+    is_writable_config_attribute: bool | None
+    is_readable_config_attribute: bool | None
+    is_state_attribute: bool | None
+    is_event_attribute: bool | None
+    enum_values: list[LookupValue]
+    raw: dict = field(repr=False)
+
+
+@dataclass
+class AttributeGroup:
+    """A group of related device attributes."""
+
+    id: str
+    key: str
+    category: int | None
+    name: str
+    description: str
+    attributes: list[AttributeMetadata]
+    raw: dict = field(repr=False)
+
+
+@dataclass
+class AttributeGroupSet:
+    """Grouped attribute metadata for a device."""
+
+    gather_protocol_version_id: str
+    groups: list[AttributeGroup]
+    raw: dict = field(repr=False)
+
+
+@dataclass
 class DeviceState:
     """Latest telemetry snapshot for a device."""
 
-    time: datetime
+    time: datetime | None
     fields: dict[str, StateAttribute]
     raw: dict = field(repr=False)
 
@@ -42,6 +87,7 @@ class FlowNode:
     flow_direction: int | None
     is_light: bool | None
     is_enabled: bool
+    extra_values: list[StateAttribute]
     raw: dict = field(repr=False)
 
 
