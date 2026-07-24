@@ -142,49 +142,49 @@ Expand the SDK to support the remaining public functionality.
 
 Status:
 
-**Not Started**
+**In Progress**
 
 ### Device State
 
-- current state
-- grouped attributes
-- attribute metadata
+- [x] current state
+- [x] grouped attributes
+- [x] attribute metadata
 
 ### History
 
-- historical keys
-- historical values
-- pagination
+- [x] historical keys
+- [x] historical values
+- [x] pagination
 
 ### Configuration
 
-- read configuration
-- cached configuration
-- batch reads
-- configuration writes
+- [x] read configuration
+- [x] cached configuration
+- [x] batch reads
+- [ ] configuration writes
 
 ### Stations
 
-- station details
-- station energy flow
-- station summaries
+- [x] station details
+- [x] station energy flow
+- [x] station summaries
 
 ### Alarms
 
-- latest alarms
-- alarm history
-- alarm reports
+- [x] latest alarms
+- [x] alarm history
+- [x] alarm reports
 
 ### Dashboard
 
-- aggregated statistics
-- summaries
+- [x] aggregated statistics
+- [x] summaries
 
 ### Dictionaries
 
-- lookup tables
-- enums
-- metadata
+- [x] lookup tables
+- [x] enums
+- [ ] metadata
 
 ---
 
