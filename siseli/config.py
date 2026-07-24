@@ -55,6 +55,24 @@ async def fetch_device_config(
     return _parse_attribute_metadata(data, key)
 
 
+async def write_device_config(
+    request: RequestFunc,
+    device_id: str,
+    *,
+    key: str,
+    value: Any,
+    config_id: str = "",
+) -> AttributeMetadata:
+    """Write one remote device configuration value."""
+    data = await request(
+        "POST",
+        "/apis/remote/device/config/write",
+        params={"deviceId": device_id},
+        json={"id": config_id, "key": key, "value": value},
+    )
+    return _parse_attribute_metadata(data, key)
+
+
 async def fetch_cached_device_configs(
     request: RequestFunc,
     device_id: str,

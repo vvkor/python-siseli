@@ -28,8 +28,10 @@ def _parse_lookup_values(values: list[dict] | None) -> list[LookupValue]:
 async def fetch_dictionary(request: RequestFunc, name: str) -> DictionaryData:
     """Return one dictionary dataset by name."""
     data = await request("GET", f"/apis/dictionary/data/{name}")
+    metadata = {key: item for key, item in data.items() if not isinstance(item, list)}
     values = {
-        key: _parse_lookup_values(item) if isinstance(item, list) else []
+        key: _parse_lookup_values(item)
         for key, item in data.items()
+        if isinstance(item, list)
     }
-    return DictionaryData(name=name, values=values, raw=data)
+    return DictionaryData(name=name, values=values, raw=data, metadata=metadata)

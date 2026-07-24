@@ -5,7 +5,11 @@ from datetime import UTC, datetime
 import pytest
 
 from siseli.alarms import fetch_alarm_list, fetch_latest_alarm
-from siseli.config import fetch_cached_device_configs, fetch_device_configs
+from siseli.config import (
+    fetch_cached_device_configs,
+    fetch_device_configs,
+    write_device_config,
+)
 from siseli.dashboard import fetch_dashboard_summary
 from siseli.dictionary import fetch_dictionary
 from siseli.history import fetch_attribute_history, fetch_state_history
@@ -110,6 +114,15 @@ async def test_fetch_config_cache_parses_metadata() -> None:
                     'isWritableConfigAttribute': True,
                 }
             }
+        if path.endswith('/config/write'):
+            return {
+                'key': 'powerSavingEnable',
+                'name': 'Power Saving Enable',
+                'nameDisplay': 'Power Saving Enable',
+                'valueType': 2,
+                'value': '0',
+                'isWritableConfigAttribute': True,
+            }
         return {
             'id': 'batch-1',
             'deviceId': 'device-1',
@@ -130,11 +143,19 @@ async def test_fetch_config_cache_parses_metadata() -> None:
 
     cached = await fetch_cached_device_configs(request, 'device-1')
     batch = await fetch_device_configs(request, 'device-1')
+    updated = await write_device_config(
+        request,
+        'device-1',
+        key='powerSavingEnable',
+        value='0',
+    )
 
     assert cached['powerSavingEnable'].key == 'powerSavingEnable'
     assert cached['powerSavingEnable'].is_writable_config_attribute is True
     assert batch.id == 'batch-1'
     assert 'powerSavingEnable' in batch.target_config
+    assert updated.key == 'powerSavingEnable'
+    assert updated.is_writable_config_attribute is True
 
 
 @pytest.mark.asyncio
@@ -232,7 +253,8 @@ async def test_fetch_alarm_dashboard_and_dictionary_helpers() -> None:
             'levels': [
                 {'value': 1, 'name': 'Notice'},
                 {'value': 2, 'name': 'Warning'},
-            ]
+            ],
+            'meta': {'locale': 'en'},
         }
 
     latest = await fetch_latest_alarm(request)
@@ -244,3 +266,4 @@ async def test_fetch_alarm_dashboard_and_dictionary_helpers() -> None:
     assert alarms.items[0].device_name == 'Inverter'
     assert summary.station_state_summary[0].label == 'Online'
     assert dictionary.values['levels'][1].name == 'Warning'
+    assert dictionary.metadata['meta']['locale'] == 'en'
