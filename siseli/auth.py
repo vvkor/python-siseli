@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 import hashlib
+import logging
 from datetime import UTC, datetime
 
 import httpx
 
-from .exceptions import AuthenticationError
+from .exceptions import AuthenticationError, NetworkError
 from .models.auth import TokenInfo
+
+_LOGGER = logging.getLogger(__name__)
 
 
 def _md5(text: str) -> str:
@@ -23,6 +26,28 @@ def _parse_dt(value: str | None) -> datetime | None:
     if not value:
         return None
     return datetime.fromisoformat(value.replace("Z", "+00:00"))
+
+
+def _extract_api_message(response: httpx.Response) -> str | None:
+    """Extract a safe, short error message from an HTTP error response.
+
+    Tries to parse the body as JSON and returns the value of the first
+    recognised error field (``error``, ``message``, ``detail``).  Falls back
+    to the first 200 characters of the raw text body so there is always
+    *something* useful in logs.  Never returns passwords, tokens, or auth
+    headers — those are never present in response bodies.
+    """
+    try:
+        body = response.json()
+        if isinstance(body, dict):
+            for key in ("error", "message", "detail"):
+                value = body.get(key)
+                if value and isinstance(value, str):
+                    return value[:200]
+    except Exception:  # noqa: BLE001
+        pass
+    text = (response.text or "").strip()
+    return text[:200] if text else None
 
 
 class Auth:
@@ -41,21 +66,68 @@ class Auth:
     async def login(self, http: httpx.AsyncClient) -> TokenInfo:
         """Authenticate and store the returned tokens.
 
-        Raises :exc:`~siseli.exceptions.AuthenticationError` on failure.
+        Raises :exc:`~siseli.exceptions.AuthenticationError` on HTTP-level
+        auth failures (4xx).  Raises :exc:`~siseli.exceptions.NetworkError`
+        on network / timeout errors so callers can distinguish the two cases.
         """
+        endpoint = "/apis/login/account"
+        _LOGGER.debug("Siseli auth: POST %s (account=%r)", endpoint, self._account)
+
         try:
             response = await http.post(
-                "/apis/login/account",
+                endpoint,
                 json={"account": self._account, "password": self._password_hash},
             )
-            response.raise_for_status()
+        except httpx.TimeoutException as exc:
+            _LOGGER.warning("Siseli auth: request timed out for account=%r", self._account)
+            raise NetworkError(f"Login request timed out: {exc}") from exc
         except httpx.HTTPError as exc:
-            raise AuthenticationError(f"Login request failed: {exc}") from exc
+            _LOGGER.warning(
+                "Siseli auth: network error for account=%r: %s", self._account, exc
+            )
+            raise NetworkError(f"Login request failed: {exc}") from exc
+
+        http_status = response.status_code
+        _LOGGER.debug(
+            "Siseli auth: response status=%d for account=%r", http_status, self._account
+        )
+
+        # For HTTP error responses, extract a safe diagnostic message and raise
+        # AuthenticationError (4xx) or NetworkError (5xx).
+        if not response.is_success:
+            api_message = _extract_api_message(response)
+            _LOGGER.warning(
+                "Siseli auth: failed for account=%r — HTTP %d%s",
+                self._account,
+                http_status,
+                f", api_message={api_message!r}" if api_message else "",
+            )
+            diag = f"HTTP {http_status}"
+            if api_message:
+                diag = f"{diag}: {api_message}"
+            if http_status >= 500:
+                raise NetworkError(f"Login request failed: {diag}")
+            raise AuthenticationError(
+                f"Login failed: {diag}",
+                http_status=http_status,
+                api_message=api_message,
+            )
 
         body = response.json()
         if body.get("code") != 0:
+            api_message = body.get("message") or body.get("error") or body.get("detail")
+            if api_message:
+                api_message = str(api_message)
+            _LOGGER.warning(
+                "Siseli auth: API returned non-zero code=%r for account=%r, message=%r",
+                body.get("code"),
+                self._account,
+                api_message,
+            )
             raise AuthenticationError(
-                f"Login failed (code {body.get('code')}): {body.get('message')}"
+                f"Login failed (code {body.get('code')}): {api_message}",
+                http_status=http_status,
+                api_message=api_message,
             )
 
         data = body["data"]
@@ -68,6 +140,7 @@ class Auth:
             account=data.get("account", self._account),
             user_id=data.get("userId", ""),
         )
+        _LOGGER.debug("Siseli auth: login successful for account=%r", self._account)
         return self._token_info
 
     @property

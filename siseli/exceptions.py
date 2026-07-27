@@ -8,7 +8,26 @@ class SiseliError(Exception):
 
 
 class AuthenticationError(SiseliError):
-    """Raised when authentication fails."""
+    """Raised when authentication fails.
+
+    Attributes:
+        http_status: HTTP status code returned by the server, or *None* when
+            the failure occurred before a response was received.
+        api_message: Short error message extracted from the API response body
+            (e.g. the ``message`` or ``error`` field), or *None* when
+            unavailable.  Never contains passwords, tokens, or other secrets.
+    """
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        http_status: int | None = None,
+        api_message: str | None = None,
+    ) -> None:
+        self.http_status = http_status
+        self.api_message = api_message
+        super().__init__(message)
 
 
 class TokenExpiredError(AuthenticationError):
