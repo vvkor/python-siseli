@@ -239,7 +239,7 @@ async def test_login_error_message_does_not_contain_password() -> None:
     assert password not in str(exc_info.value)
     # MD5 hash should not appear either (it's the sent value, not in response)
     import hashlib
-    md5_hash = hashlib.md5(password.encode()).hexdigest()
+    md5_hash = hashlib.md5(password.encode()).hexdigest()  # noqa: S324
     assert md5_hash not in str(exc_info.value)
 
 
