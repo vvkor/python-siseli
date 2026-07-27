@@ -15,9 +15,32 @@ jobs:
           python-version: "3.11"
 
       - name: Set version from tag
+        env:
+          TAG_NAME: ${{ github.event.release.tag_name || github.ref_name }}
         run: |
-          VERSION="${GITHUB_REF_NAME#v}"
-          sed -i "s/^version = .*/version = \"$VERSION\"/" pyproject.toml
+          VERSION="${TAG_NAME#v}"
+          VERSION="${VERSION#.}"
+          VERSION="$VERSION" python - <<'PY'
+          import os
+          import pathlib
+          import re
+
+          path = pathlib.Path("pyproject.toml")
+          content = path.read_text()
+          version = os.environ["VERSION"]
+          updated, count = re.subn(
+              r'(?m)^version\s*=\s*"[^"]*"$',
+              f'version = "{version}"',
+              content,
+              count=1,
+          )
+
+          if count != 1:
+              raise SystemExit("Failed to update project version in pyproject.toml")
+
+          path.write_text(updated)
+          print(f"Using version {version}")
+          PY
 
       - name: Install build
         run: pip install build
@@ -44,4 +67,4 @@ jobs:
 
       - uses: pypa/gh-action-pypi-publish@release/v1
         with:
-          skip_existing: true
+          skip-existing: true
