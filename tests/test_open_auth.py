@@ -7,7 +7,6 @@ import pytest
 
 from siseli.const import SISELI_APP_ID, SISELI_APP_SECRET_ENCRYPTED
 from siseli.open_auth import (
-    _sha256_hex,
     attach_open_auth,
     build_open_headers,
     decrypt_open_secret,
@@ -46,7 +45,7 @@ def test_get_request_signing_uses_empty_body_hash() -> None:
         timezone="UTC",
         nonce="nonce-123",
     )
-    assert headers["IOT-Open-Body-Hash"] == ""
+    assert "IOT-Open-Body-Hash" not in headers
     assert headers["IOT-Open-Sign"] == "a325bd9e648a5cd75ca803ccb801906e"
 
 
@@ -117,15 +116,22 @@ async def test_header_generation_includes_required_iot_open_values() -> None:
         "IOT-Time-Zone",
         "IOT-Open-AppID",
         "IOT-Open-Nonce",
-        "IOT-Open-Body-Hash",
         "IOT-Open-Sign",
     ):
         assert key in request.headers
+    assert "IOT-Open-Body-Hash" not in request.headers
     assert request.headers["IOT-Time-Zone"] == "Europe/Moscow"
     assert request.headers["IOT-Open-AppID"] == SISELI_APP_ID
-    expected_hash = _sha256_hex(request.content)
-    assert request.headers["IOT-Open-Body-Hash"] == expected_hash
-    assert request.headers["IOT-Open-Sign"]
+    expected_sign = build_open_headers(
+        method="POST",
+        query="",
+        body=request.content,
+        app_id=SISELI_APP_ID,
+        app_secret=secret,
+        timezone="Europe/Moscow",
+        nonce=request.headers["IOT-Open-Nonce"],
+    )["IOT-Open-Sign"]
+    assert request.headers["IOT-Open-Sign"] == expected_sign
     assert request.headers["IOT-Open-Sign"] != secret
 
 
