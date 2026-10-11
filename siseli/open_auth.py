@@ -116,6 +116,7 @@ def build_open_headers(
         "IOT-Open-Sign": sign,
     }
 
+
 def attach_open_auth(
     client: Any,
     *,
@@ -130,8 +131,9 @@ def attach_open_auth(
     - ``IOT-Time-Zone``
     - ``IOT-Open-AppID``
     - ``IOT-Open-Nonce``
-    - ``IOT-Open-Body-Hash``
     - ``IOT-Open-Sign``
+
+    ``IOT-Open-Body-Hash`` is part of the signature but is not sent.
 
     Parameters
     ----------
