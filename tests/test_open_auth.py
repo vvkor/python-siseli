@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
-
 import httpx
 import pytest
 
@@ -49,7 +47,7 @@ def test_get_request_signing_uses_empty_body_hash() -> None:
         nonce="nonce-123",
     )
     assert headers["IOT-Open-Body-Hash"] == ""
-    assert headers["IOT-Open-Sign"] == "bee1c1c32629baf72be698fbe53fdc11"
+    assert headers["IOT-Open-Sign"] == "a325bd9e648a5cd75ca803ccb801906e"
 
 
 def test_post_request_signing_with_json_body() -> None:
@@ -65,8 +63,7 @@ def test_post_request_signing_with_json_body() -> None:
         timezone="UTC",
         nonce="nonce-123",
     )
-    assert headers["IOT-Open-Body-Hash"] == hashlib.sha256(body).hexdigest()
-    assert headers["IOT-Open-Sign"] == "1f3525cce7ea5fa378409070c17f0076"
+    assert headers["IOT-Open-Sign"] == "6fa65e7127b26486b752cdfdf6e60793"
 
 
 def test_unicode_json_body_signing() -> None:
@@ -82,8 +79,7 @@ def test_unicode_json_body_signing() -> None:
         timezone="UTC",
         nonce="nonce-123",
     )
-    assert headers["IOT-Open-Body-Hash"] == hashlib.sha256(body).hexdigest()
-    assert headers["IOT-Open-Sign"] == "8d4c8f2771f9f7f419fd4cbec1d0f1e6"
+    assert headers["IOT-Open-Sign"] == "ef3d8c0d1834f59ae76312fcb43356aa"
 
 
 def test_empty_post_body_signing() -> None:
@@ -98,11 +94,7 @@ def test_empty_post_body_signing() -> None:
         timezone="UTC",
         nonce="nonce-123",
     )
-    assert (
-        headers["IOT-Open-Body-Hash"]
-        == "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
-    )
-    assert headers["IOT-Open-Sign"] == "9f8506bc2a8f3da76eebc4f99691d271"
+    assert headers["IOT-Open-Sign"] == "c9fc185f18a1082b3499aa2d74b08240"
 
 
 @pytest.mark.asyncio
@@ -135,3 +127,34 @@ async def test_header_generation_includes_required_iot_open_values() -> None:
     assert request.headers["IOT-Open-Body-Hash"] == expected_hash
     assert request.headers["IOT-Open-Sign"]
     assert request.headers["IOT-Open-Sign"] != secret
+
+
+def test_body_change_changes_signature_and_query_is_ignored() -> None:
+    """Body bytes affect the signature; query string does not."""
+    secret = decrypt_open_secret(SISELI_APP_ID, SISELI_APP_SECRET_ENCRYPTED)
+
+    def sign(body: bytes, query: str = "") -> str:
+        return build_open_headers(
+            method="POST",
+            query=query,
+            body=body,
+            app_id=SISELI_APP_ID,
+            app_secret=secret,
+            timezone="UTC",
+            nonce="n",
+        )["IOT-Open-Sign"]
+
+    assert sign(b"{}") != sign(b"{ }")
+    assert sign(b"{}") == sign(b"{}", "a=1")
+
+
+@pytest.mark.asyncio
+async def test_each_request_gets_new_nonce() -> None:
+    client = _MockSiseliClient()
+    attach_open_auth(client)
+    hook = client._http.event_hooks["request"][0]
+    r1 = httpx.Request("GET", "https://solar.siseli.com/apis/x")
+    r2 = httpx.Request("GET", "https://solar.siseli.com/apis/x")
+    await hook(r1)
+    await hook(r2)
+    assert r1.headers["IOT-Open-Nonce"] != r2.headers["IOT-Open-Nonce"]

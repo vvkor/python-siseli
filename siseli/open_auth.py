@@ -7,18 +7,20 @@ client (CryptoJS-based) exactly:
 1. Decrypt the base64-encoded app secret with AES-128-CBC.
    Key and IV are derived from MD5(app_id) as ASCII hex chars.
 2. Compute a body hash: empty string for GET; SHA-256 hex for everything else.
-3. Collect query params, inject the three open-auth fields, sort by key,
-   serialise without URL-encoding, hex-encode the UTF-8 bytes.
-4. Sign: HMAC-SHA256(hex_string, secret) → MD5 → lowercase hex.
+3. Sign input: ``IOT-Open-AppID``, ``IOT-Open-Body-Hash`` and
+   ``IOT-Open-Nonce`` only, sorted by key, joined as ``k=v&k=v`` without
+   URL-encoding, then base64-encoded (UTF-8).
+4. Sign: HMAC-SHA256(base64_string, secret) raw digest → MD5 → lowercase hex.
+5. The body hash is part of the signature but is NOT sent as an HTTP header.
 """
 
 from __future__ import annotations
 
+import base64
 import hashlib
 import hmac
 import uuid
 from typing import TYPE_CHECKING, Any
-from urllib.parse import parse_qs
 
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 
@@ -37,8 +39,6 @@ def decrypt_open_secret(app_id: str, encrypted_secret_b64: str) -> str:
 
     ZeroPadding is assumed: trailing null bytes are stripped from the output.
     """
-    import base64
-
     md5_hex = hashlib.md5(app_id.encode()).hexdigest()  # noqa: S324
     key = md5_hex[:16].encode("ascii")
     iv = md5_hex[16:].encode("ascii")
@@ -72,7 +72,8 @@ def build_open_headers(
     method:
         HTTP method ("GET", "POST", …).
     query:
-        The raw query string portion of the URL (without the leading "?").
+        The raw query string portion of the URL. Accepted for API
+        compatibility; it does not take part in the signature.
     body:
         Raw request body bytes, or *None* / empty for GET requests.
     app_id:
@@ -90,42 +91,30 @@ def build_open_headers(
     else:
         body_hash = _sha256_hex(body if body else b"")
 
-    # --- params for the sign input -------------------------------------------
-    params: dict[str, str] = {}
-    if query:
-        for key, values in parse_qs(query, keep_blank_values=True).items():
-            params[key] = values[0]
+    # --- sign input: exactly three params, sorted, no URL-encoding -----------
+    params = {
+        "IOT-Open-AppID": app_id,
+        "IOT-Open-Body-Hash": body_hash,
+        "IOT-Open-Nonce": nonce,
+    }
+    signing_string = "&".join(f"{k}={v}" for k, v in sorted(params.items()))
 
-    # Remove any stale open-auth fields so they cannot influence the new sign.
-    for field in ("IOT-Open-AppID", "IOT-Open-Nonce", "IOT-Open-Sign", "IOT-Open-Body-Hash"):
-        params.pop(field, None)
-
-    params["IOT-Open-AppID"] = app_id
-    params["IOT-Open-Nonce"] = nonce
-    params["IOT-Open-Body-Hash"] = body_hash
-
-    # Sort alphabetically (case-sensitive, matching JS default sort order).
-    query_str = "&".join(f"{k}={v}" for k, v in sorted(params.items()))
-
-    # --- sign ----------------------------------------------------------------
-    # CryptoJS: Utf8.parse(query_str) → Hex.stringify → hex_string
-    # Then: HmacSHA256(hex_string, secret) → MD5 → hex
-    hex_str = query_str.encode("utf-8").hex()
+    # --- sign: base64 -> HMAC-SHA256 (raw digest) -> MD5 hex -----------------
+    base64_input = base64.b64encode(signing_string.encode("utf-8")).decode("ascii")
     hmac_digest = hmac.new(
         app_secret.encode("utf-8"),
-        hex_str.encode("utf-8"),
+        base64_input.encode("ascii"),
         hashlib.sha256,
     ).digest()
     sign = hashlib.md5(hmac_digest).hexdigest()  # noqa: S324
 
+    # The body hash takes part in the signature but is not sent as a header.
     return {
         "IOT-Time-Zone": timezone,
         "IOT-Open-AppID": app_id,
         "IOT-Open-Nonce": nonce,
-        "IOT-Open-Body-Hash": body_hash,
         "IOT-Open-Sign": sign,
     }
-
 
 def attach_open_auth(
     client: Any,
