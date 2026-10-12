@@ -23,6 +23,7 @@ from .config import (
     safe_write_device_config,
     write_device_config,
 )
+from .config_safety import ConfigAccess, ConfigWriteResult
 from .const import BASE_URL, DEFAULT_DATA_SOURCE, DEFAULT_PAGE_SIZE, DEFAULT_TIMEOUT
 from .dashboard import (
     fetch_dashboard_daily_generation_time_rank,
@@ -32,7 +33,6 @@ from .dashboard import (
 )
 from .device import fetch_device_details, fetch_device_list
 from .dictionary import fetch_dictionary
-from .config_safety import ConfigAccess, ConfigWriteResult
 from .exceptions import ApiError, NetworkError
 from .history import fetch_attribute_history, fetch_state_history
 from .models.alarm import Alarm, AlarmReport

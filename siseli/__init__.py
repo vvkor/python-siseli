@@ -1,7 +1,6 @@
 """python-siseli — Python SDK for Siseli Cloud."""
 
 from .client import SiseliClient
-from .open_auth import attach_open_auth
 from .config import config_value
 from .config_safety import (
     CONFIG_SPECS,
@@ -14,7 +13,13 @@ from .config_safety import (
     ConfigWriteResult,
     ConfigWriteStatus,
 )
-from .exceptions import ApiError, AuthenticationError, NetworkError, SiseliError, TokenExpiredError
+from .exceptions import (
+    ApiError,
+    AuthenticationError,
+    NetworkError,
+    SiseliError,
+    TokenExpiredError,
+)
 from .models import (
     Alarm,
     AlarmReport,
@@ -35,6 +40,7 @@ from .models import (
     StationEnergyFlow,
     TokenInfo,
 )
+from .open_auth import attach_open_auth
 
 __all__ = [
     "SiseliClient",

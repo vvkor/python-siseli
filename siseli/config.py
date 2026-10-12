@@ -6,6 +6,7 @@ import asyncio
 import time
 from typing import Any, Awaitable, Callable
 
+from ._utils import parse_datetime
 from .config_safety import (
     ConfigAccess,
     ConfigAccessDenied,
@@ -18,8 +19,6 @@ from .config_safety import (
     values_equal,
 )
 from .exceptions import ApiError, NetworkError
-
-from ._utils import parse_datetime
 from .models.config import ConfigBatchRead
 from .models.state import AttributeMetadata
 from .state import _parse_attribute_metadata

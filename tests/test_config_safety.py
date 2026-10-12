@@ -56,7 +56,9 @@ def run(cloud, key, value, **kwargs):
 
     kwargs.setdefault("min_interval", 0)
     return asyncio.run(
-        safe_write_device_config(cloud, "dev-%d" % id(cloud), key=key, value=value, **kwargs)
+        safe_write_device_config(
+            cloud, f"dev-{id(cloud)}", key=key, value=value, **kwargs
+        )
     )
 
 
@@ -102,6 +104,8 @@ def test_voltage_order_enforced():
     kw = {"access": ConfigAccess.CRITICAL, "related_values": VOLTAGES}
     with pytest.raises(ConfigValidationError):
         validate_config_value("setBatteryRechargingVoltage", 13.4, **kw)
+    with pytest.raises(ConfigValidationError):
+        validate_config_value("setBatteryRedischargingVoltage", 13.6, **kw)
     with pytest.raises(ConfigValidationError):
         validate_config_value("setBatteryFloatChargingVoltage", 14.5, **kw)
     with pytest.raises(ConfigValidationError):

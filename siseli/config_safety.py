@@ -8,9 +8,11 @@ explicit access level.
 
 from __future__ import annotations
 
+import math
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from enum import Enum, IntEnum
-from typing import Any, Mapping
+from typing import Any
 
 from .exceptions import SiseliError
 
@@ -153,7 +155,7 @@ UNSUPPORTED_WRITE_KEYS = frozenset({"activeOrInactiveBatteryEqualization"})
 _ORDER_RULES: tuple[tuple[str, str], ...] = (
     ("setBatteryCutOffVoltage", "setBatteryRechargingVoltage"),
     ("setBatteryRechargingVoltage", "setBatteryRedischargingVoltage"),
-    ("setBatteryCutOffVoltage", "setBatteryFloatChargingVoltage"),
+    ("setBatteryRedischargingVoltage", "setBatteryFloatChargingVoltage"),
 )
 # (lower, higher): lower must not exceed higher.
 _ORDER_RULES_INCLUSIVE: tuple[tuple[str, str], ...] = (
@@ -255,7 +257,7 @@ def _as_number(key: str, value: Any) -> float:
         number = float(value)
     except (TypeError, ValueError) as exc:
         raise ConfigValidationError(f"{key}: {value!r} is not a number") from exc
-    if number != number or number in (float("inf"), float("-inf")):
+    if not math.isfinite(number):
         raise ConfigValidationError(f"{key}: value must be finite")
     return number
 
