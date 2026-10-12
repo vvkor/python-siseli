@@ -7,6 +7,7 @@ import pytest
 from siseli.alarms import fetch_alarm_list, fetch_latest_alarm
 from siseli.config import (
     fetch_cached_device_configs,
+    fetch_device_config,
     fetch_device_configs,
     write_device_config,
 )
@@ -156,6 +157,40 @@ async def test_fetch_config_cache_parses_metadata() -> None:
     assert 'powerSavingEnable' in batch.target_config
     assert updated.key == 'powerSavingEnable'
     assert updated.is_writable_config_attribute is True
+
+
+@pytest.mark.asyncio
+async def test_config_read_requests_include_expected_json_bodies() -> None:
+    calls: list[tuple[str, str, dict]] = []
+
+    async def request(method: str, path: str, **kwargs):
+        calls.append((method, path, kwargs))
+        if path.endswith("/configs/cache/get"):
+            return {}
+        return {
+            "key": "buzzerEnabled",
+            "name": "Buzzer Enabled",
+            "nameDisplay": "Buzzer Enabled",
+            "valueType": 2,
+            "value": 0,
+        }
+
+    await fetch_cached_device_configs(request, "device-1")
+    await fetch_device_config(request, "device-1", key="buzzerEnabled")
+
+    assert calls[0] == (
+        "POST",
+        "/apis/remote/device/configs/cache/get",
+        {"params": {"deviceId": "device-1"}, "json": {"id": "device-1"}},
+    )
+    assert calls[1] == (
+        "POST",
+        "/apis/remote/device/config/read",
+        {
+            "params": {"deviceId": "device-1"},
+            "json": {"id": "", "key": "buzzerEnabled"},
+        },
+    )
 
 
 @pytest.mark.asyncio
