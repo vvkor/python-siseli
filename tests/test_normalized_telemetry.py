@@ -49,6 +49,7 @@ def test_to_sensor_data_maps_fields_and_converts_power_units() -> None:
     assert result["inverter_state"] == "B"
     assert "grid_power" not in result
 
+
 def test_to_sensor_data_handles_discharge_and_invalid_values() -> None:
     result = make_state(
         {
@@ -70,6 +71,7 @@ def test_to_sensor_data_handles_discharge_and_invalid_values() -> None:
     assert result["pv_power"] is None
     assert result["load_power"] is None
     assert result["inverter_state"] == "B"
+
 
 def test_to_sensor_data_returns_none_when_derived_inputs_missing() -> None:
     result = make_state(
