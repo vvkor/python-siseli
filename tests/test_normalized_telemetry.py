@@ -42,6 +42,13 @@ def test_to_sensor_data_maps_fields_and_converts_power_units() -> None:
     ).to_sensor_data()
 
     assert result["battery_soc"] == pytest.approx(85)
+    assert result["battery_voltage"] == pytest.approx(52.1)
+    assert result["pv_voltage"] == pytest.approx(380)
+    assert result["pv_current"] == pytest.approx(3.2)
+    assert result["grid_voltage"] == pytest.approx(230)
+    assert result["grid_frequency"] == pytest.approx(50)
+    assert result["output_voltage"] == pytest.approx(230)
+    assert result["output_frequency"] == pytest.approx(50)
     assert result["battery_current"] == pytest.approx(10.5)
     assert result["battery_power"] == pytest.approx(547.05)
     assert result["pv_power"] == pytest.approx(1216)
