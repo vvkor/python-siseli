@@ -26,17 +26,17 @@ def test_to_sensor_data_maps_fields_and_converts_power_units() -> None:
     result = make_state(
         {
             "batteryCapacity": 85,
-        "batteryVoltage": 52.1,
-        "batteryChargingCurrent": 10.5,
-        "batteryDischargeCurrent": 0,
-        "pvInputVoltage1": 380,
-        "pv1InputCurrentForBattery": 3.2,
-        "generationPower": 1.216,
-        "gridVoltage": 230,
-        "gridFrequency": 50,
-        "acOutputVoltage": 230,
-        "acOutputFrequency": 50,
-        "acOutputActivePower": 0.420,
+            "batteryVoltage": 52.1,
+            "batteryChargingCurrent": 10.5,
+            "batteryDischargeCurrent": 0,
+            "pvInputVoltage1": 380,
+            "pv1InputCurrentForBattery": 3.2,
+            "generationPower": 1.216,
+            "gridVoltage": 230,
+            "gridFrequency": 50,
+            "acOutputVoltage": 230,
+            "acOutputFrequency": 50,
+            "acOutputActivePower": 0.420,
             "workingMode": "B",
         }
     ).to_sensor_data()
@@ -49,17 +49,16 @@ def test_to_sensor_data_maps_fields_and_converts_power_units() -> None:
     assert result["inverter_state"] == "B"
     assert "grid_power" not in result
 
-
 def test_to_sensor_data_handles_discharge_and_invalid_values() -> None:
     result = make_state(
         {
             "batteryVoltage": 52.1,
-        "batteryChargingCurrent": 0,
-        "batteryDischargeCurrent": 4.2,
-        "pvInputVoltage1": "--",
-        "pv1InputCurrentForBattery": True,
-        "generationPower": float("nan"),
-        "acOutputActivePower": "not available",
+            "batteryChargingCurrent": 0,
+            "batteryDischargeCurrent": 4.2,
+            "pvInputVoltage1": "--",
+            "pv1InputCurrentForBattery": True,
+            "generationPower": float("nan"),
+            "acOutputActivePower": "not available",
             "workingMode": "B",
         }
     ).to_sensor_data()
@@ -71,7 +70,6 @@ def test_to_sensor_data_handles_discharge_and_invalid_values() -> None:
     assert result["pv_power"] is None
     assert result["load_power"] is None
     assert result["inverter_state"] == "B"
-
 
 def test_to_sensor_data_returns_none_when_derived_inputs_missing() -> None:
     result = make_state(
