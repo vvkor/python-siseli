@@ -9,7 +9,12 @@ from typing import Any
 def parse_datetime(value: str | None) -> datetime | None:
     if not value:
         return None
-    return datetime.fromisoformat(value.replace("Z", "+00:00"))
+    text = value.replace("Z", "+00:00")
+    if len(text) == 4 and text.isdigit():
+        text = f"{text}-01-01"
+    elif len(text) == 7 and text[4] == "-":
+        text = f"{text}-01"
+    return datetime.fromisoformat(text)
 
 
 def serialize_datetime(value: datetime | str | None) -> str | None:
