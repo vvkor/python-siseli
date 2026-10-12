@@ -9,6 +9,19 @@ from typing import Any
 from .common import LookupValue
 
 
+def _numeric(value: Any) -> float | None:
+    """Return finite numeric telemetry as a float, otherwise None."""
+    if value is None or isinstance(value, bool):
+        return None
+    try:
+        number = float(value)
+    except (TypeError, ValueError, OverflowError):
+        return None
+    if number != number or number in (float("inf"), float("-inf")):
+        return None
+    return number
+
+
 @dataclass
 class StateAttribute:
     """A single telemetry attribute."""
@@ -75,6 +88,52 @@ class DeviceState:
     def get(self, key: str) -> StateAttribute | None:
         """Return an attribute by its key, or *None* if not present."""
         return self.fields.get(key)
+
+    def to_sensor_data(self) -> dict[str, Any]:
+        """Return stable, typed semantic telemetry fields for integrations.
+
+        API-specific field names, unit conversions, and derived battery values
+        belong here rather than in consumer integrations. Invalid numeric
+        telemetry is represented as None. Power values reported in kW by this
+        device are converted to W.
+        """
+        def value(api_key: str) -> Any:
+            attribute = self.fields.get(api_key)
+            return attribute.value if attribute is not None else None
+
+        def number(api_key: str) -> float | None:
+            return _numeric(value(api_key))
+
+        voltage = number("batteryVoltage")
+        charging = number("batteryChargingCurrent")
+        discharging = number("batteryDischargeCurrent")
+        current = (
+            charging - discharging
+            if charging is not None and discharging is not None
+            else None
+        )
+        pv_power = number("generationPower")
+        load_power = number("acOutputActivePower")
+        battery_power = (
+            voltage * current
+            if voltage is not None and current is not None
+            else None
+        )
+        return {
+            "battery_soc": number("batteryCapacity"),
+            "battery_voltage": voltage,
+            "battery_current": current,
+            "battery_power": battery_power,
+            "pv_voltage": number("pvInputVoltage1"),
+            "pv_current": number("pv1InputCurrentForBattery"),
+            "pv_power": pv_power * 1000 if pv_power is not None else None,
+            "grid_voltage": number("gridVoltage"),
+            "grid_frequency": number("gridFrequency"),
+            "output_voltage": number("acOutputVoltage"),
+            "output_frequency": number("acOutputFrequency"),
+            "load_power": load_power * 1000 if load_power is not None else None,
+            "inverter_state": value("workingMode"),
+        }
 
 
 @dataclass
