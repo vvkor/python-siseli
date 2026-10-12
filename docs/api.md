@@ -1,22 +1,24 @@
 # Solar SISeli API Documentation
 
-Документация составлена по HAR-файлу `/home/runner/work/python-siseli/python-siseli/solar.siseli.com.har` и отражает фактически наблюдавшиеся запросы веб-интерфейса.
+Каталог собран обратной разработкой по HAR-записям веб-интерфейса Siseli Cloud. Последняя сверка выполнена 12 октября 2026 года по предоставленному HAR-файлу `BIG_solar.siseli.com.har`.
 
 > Важно: это reverse-engineered документация. Она описывает реальные вызовы из HAR, но не гарантирует полноту всех полей, бизнес-правил и кодов ошибок сервера.
 
 ## Источник и объем
 
 - Базовый URL: `https://solar.siseli.com`
-- Наблюдалось API-запросов: `405`
-- Уникальных endpoint'ов: `108`
-- Большинство вызовов требуют заголовок `IOT-Token`; в HAR он присутствует у `372` запросов после логина.
+- В последнем проверенном HAR наблюдалось `225` запросов к `/apis/*` и `86` уникальных сочетаний метода и пути (query string не учитывается).
+- Таблицы ниже — накопленный каталог, объединяющий этот и более ранние HAR/сведения из permissions ответа. Поэтому не каждый endpoint из каталога обязательно присутствует в последнем capture.
+- Большинство вызовов требуют заголовок `IOT-Token`; в последнем HAR он присутствует у запросов после входа в систему.
 
 ## Аутентификация
 
-1. Клиент выполняет `POST /apis/login/account` с JSON-телом `account` и `password`.
+1. Браузерный клиент выполняет `POST /apis/login/account` с JSON-телом `account` и `password`. В наблюдаемом клиентском потоке пароль передавался как MD5-хеш; SDK также вычисляет MD5 от переданного открытого пароля перед отправкой.
 2. В ответ сервер возвращает `accessToken` и `refreshToken` внутри `data`.
 3. Для дальнейших вызовов клиент передает токен в заголовке `IOT-Token`.
 4. Дополнительно клиент отправляет заголовок `IOT-Time-Zone` со значением часового пояса браузера.
+
+`refreshToken` и срок его действия присутствуют в ответе login. Отдельный endpoint обновления access token в рассмотренных HAR не обнаружен. Текущий SDK не использует refresh token: когда access token истекает, он повторно выполняет login.
 
 ### Пример запроса логина
 
@@ -53,7 +55,7 @@ Accept: application/json
 
 - Формат запроса: в основном `application/json`; GET-параметры передаются в query string.
 - Формат ответа для JSON API: `{ code, message, localMessage, data }`.
-- Успешный результат обычно имеет `code = 0`.
+- Успешный результат обычно имеет `code = 0`. HTTP 200 не гарантирует успех операции: API может вернуть ненулевой `code` и сообщение об ошибке в JSON-теле.
 - Для бинарных загрузок (`/apis/resource/download/*`) тело ответа не JSON, а файл/медиа-контент.
 - Часто используются поля пагинации: `page`, `count`.
 - Для сортировки встречаются флаги вида `orderBy...Asc`, `orderBy...Desc`, а также `timeAsc`.
@@ -143,6 +145,7 @@ Accept: application/json
 | `POST` | `/apis/device/external/list` | Поиск списка устройств по фильтрам. | `—` | `mainDeviceId` | `list` | — |
 | `POST` | `/apis/device/gather/protocol/open/search` | Поиск открытых протоколов/профилей опроса устройств. | `—` | `applyModeCategory, count, page` | `dict` | — |
 | `POST` | `/apis/device/list` | Поиск списка устройств по фильтрам. | `—` | `applyModeCategory, count, deviceSortKey, dtuDtuid, dtuId, exportType, fieldNames, gatherProtocolNumber, name, orderByCreatedAtAsc, orderByInstalledAtAsc, orderByNameAsc, orderByProducingPowerAsc, orderBySerialNumberAsc, orderByStateAsc, page, remark, serialNumber, softwareVersion, state, stationId` | `dict` | — |
+| `POST` | `/apis/device/batch/upgrade/list` | Поиск пакетных операций обновления устройств. | `—` | `count, deviceName, deviceSerialNumber, firmwareName, fromTime, page, protocolName, status, toTime` | `null` | Последний HAR: HTTP 200, `code=20210`, `message="no rights"` |
 | `POST` | `/apis/device/report/daily` | Формирование отчета по устройству за период. | `—` | `fieldNames, fromTime, id, remark, toTime` | `dict` | — |
 | `POST` | `/apis/device/report/export/records/list` | Поиск или получение деталей экспортированных отчетов по устройствам. | `—` | `count, deviceName, deviceSerialNumber, fromTime, page, state, timeAsc, toTime, type` | `dict` | — |
 | `POST` | `/apis/device/report/monthly` | Формирование отчета по устройству за период. | `—` | `fieldNames, fromTime, id, remark, toTime` | `dict` | — |
@@ -160,6 +163,7 @@ Accept: application/json
 | Method | Path | Назначение | Query params | Body fields | Response `data` | Notes |
 | --- | --- | --- | --- | --- | --- | --- |
 | `POST` | `/apis/deviceOverView/generatedEnergy/daily` | Агрегированные показатели устройства по времени и категориям. | `deviceId` | `time` | `list` | — |
+| `POST` | `/apis/deviceOverView/pvInverterPowerClass/daily/detail` | Детальный временной ряд показателей PV-инвертора за день. | `deviceId` | `time` | `dict` | В последнем HAR `data` содержит `page`, `count`, `total`, `payload`; в `payload` наблюдались `timeSeries`, `fields`, `formatters`, `fieldInfo` |
 | `POST` | `/apis/deviceOverView/stateAttributeSummary/category/daily` | Агрегированные показатели устройства по времени и категориям. | `deviceId, summaryCategoryKey` | `time` | `dict` | — |
 | `POST` | `/apis/deviceOverView/stateAttributeSummary/category/monthly` | Агрегированные показатели устройства по времени и категориям. | `deviceId, summaryCategoryKey` | `time` | `dict` | — |
 | `POST` | `/apis/deviceOverView/stateAttributeSummary/category/total` | Агрегированные показатели устройства по времени и категориям. | `deviceId, summaryCategoryKey` | `time` | `dict` | — |
@@ -185,6 +189,7 @@ Accept: application/json
 
 | Method | Path | Назначение | Query params | Body fields | Response `data` | Notes |
 | --- | --- | --- | --- | --- | --- | --- |
+| `GET` | `/apis/dictionary/data/deviceBatchUpgrade` | Получение справочника для пакетного обновления устройств. | `—` | `—` | `null` | Последний HAR: HTTP 200, `code=20210`, `message="no rights"` |
 | `GET` | `/apis/dictionary/data/alarm` | Получение справочника `alarm`. | `—` | `—` | `dict` | — |
 | `GET` | `/apis/dictionary/data/device` | Получение справочника `device`. | `—` | `—` | `dict` | — |
 | `GET` | `/apis/dictionary/data/dtu` | Получение справочника `dtu`. | `—` | `—` | `dict` | Обнаружен в permissions ответа `/apis/login/account` |
@@ -334,6 +339,33 @@ Accept: application/json
 | `POST` | `/apis/user/select/iotUserInfo` | Получение профиля пользователя. | `—` | `—` | `dict` | POST без JSON-полей в теле в наблюдаемом вызове |
 | `POST` | `/apis/user/select/userThemeColors` | Получение пользовательских цветов темы. | `—` | `—` | `dict` | POST без JSON-полей в теле в наблюдаемом вызове |
 | `POST` | `/apis/user/update/iotUserInfo` | Обновление профиля пользователя. | `—` | `iconResid, name, remark` | `NoneType` | — |
+
+## SDK: поддерживаемые возможности
+
+SDK реализует только часть endpoint-каталога. Публичные методы `SiseliClient` на момент последней сверки:
+
+| Возможность | Методы SDK | Endpoint |
+| --- | --- | --- |
+| Аутентификация и повторный вход после истечения access token | `authenticate()` | `POST /apis/login/account` |
+| Список устройств и подробности устройства | `get_devices()`, `get_all_devices()`, `get_device()` | `/apis/device/list`, `/apis/device/details` |
+| Состояние, атрибуты, группы и поток энергии устройства | `get_device_state()`, `get_device_attributes()`, `get_device_attribute_groups()`, `get_energy_flow()` | `/apis/deviceState/simple/*`, `/apis/device/query/attribute/group` |
+| История атрибутов и записей состояния | `get_attribute_history()`, `get_state_history()` | `/apis/deviceState/simple/attribute/*/v1` |
+| Удаленная конфигурация | `get_device_config()`, `get_cached_device_configs()`, `read_device_configs()`, `get_device_config_batch()`, `set_device_config()` | `/apis/remote/device/config*` |
+| Станции, потоки, доход и сводки | `get_stations()`, `get_all_stations()`, `get_station()`, `get_station_energy_flow()`, `get_station_income()`, `get_station_summary()` | `/apis/station/*`, `/apis/stationOverView/*` |
+| Сводки устройства и владельца, дневная выработка и детали мощности | `get_device_summary()`, `get_device_energy_totals()`, `get_owner_summary()`, `get_device_generated_energy_daily()`, `get_device_power_daily_detail()` | `/apis/deviceOverView/*`, `/apis/ownerOverView/*` |
+| Тревоги и отчеты о тревогах | `get_latest_alarm()`, `get_alarms()`, `get_alarm_report_headers()`, `get_alarm_report()`, `get_alarm_reports()` | `/apis/alarm/*` |
+| Сводка и аналитика dashboard | `get_dashboard_summary()`, `get_dashboard_daily_generation_time_rank()`, `get_dashboard_station_distribution()`, `get_dashboard_monthly_generated_energy()` | `/apis/dashboard/summary/*` |
+| Справочники | `get_dictionary()` | `/apis/dictionary/data/{name}` |
+
+Остальные пути в каталоге обнаружены в HAR или permissions, но не имеют соответствующего публичного метода SDK.
+
+### Форматы overview
+
+- `stateAttributeSummary/category/{daily|monthly|yearly|total}` возвращает объект категории и список `properties`. У каждого свойства есть метаданные `property` (ключ, название, единица) и `timePoints` с полями `time`, `timeDisplay`, `value`, `isRealValue`.
+- Для `pvInverterElectricityQuantityClass` в HAR обнаружены, среди прочих, `pvGeneratedEnergy`, `buyElectricityQuantity`, `sellElectricityQuantity`, `chargeElectricityQuantity`, `dischargeElectricityQuantity`, `consumeElectricityQuantity`; единица — `kWh`.
+- `generatedEnergy/daily` возвращает список точек выработки за день (`time`, `timeDisplay`, `value`/`generatedEnergy`, `isRealValue`).
+- В вызовах последнего HAR `time` для дневной, месячной и годовой агрегации имел формат `YYYY-MM-DD`, `YYYY-MM` и `YYYY` соответственно. Для `total` передавалась временная метка ISO 8601.
+- Эти формы и поля наблюдались в конкретном capture; они не являются гарантией контракта сервера для всех типов устройств и учетных записей.
 
 ## Наблюдаемые параметры по типам задач
 
