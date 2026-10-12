@@ -188,7 +188,7 @@ async def test_config_read_requests_include_expected_json_bodies() -> None:
         "/apis/remote/device/config/read",
         {
             "params": {"deviceId": "device-1"},
-            "json": {"id": "", "key": "buzzerEnabled"},
+            "json": {"id": "device-1", "key": "buzzerEnabled"},
         },
     )
 
