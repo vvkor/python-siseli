@@ -112,19 +112,26 @@ class DeviceState:
             if charging is not None and discharging is not None
             else None
         )
+        pv_power = number("generationPower")
+        load_power = number("acOutputActivePower")
+        battery_power = (
+            voltage * current
+            if voltage is not None and current is not None
+            else None
+        )
         return {
             "battery_soc": number("batteryCapacity"),
             "battery_voltage": voltage,
             "battery_current": current,
-            "battery_power": voltage * current if voltage is not None and current is not None else None,
+            "battery_power": battery_power,
             "pv_voltage": number("pvInputVoltage1"),
             "pv_current": number("pv1InputCurrentForBattery"),
-            "pv_power": (number("generationPower") * 1000 if number("generationPower") is not None else None),
+            "pv_power": pv_power * 1000 if pv_power is not None else None,
             "grid_voltage": number("gridVoltage"),
             "grid_frequency": number("gridFrequency"),
             "output_voltage": number("acOutputVoltage"),
             "output_frequency": number("acOutputFrequency"),
-            "load_power": (number("acOutputActivePower") * 1000 if number("acOutputActivePower") is not None else None),
+            "load_power": load_power * 1000 if load_power is not None else None,
             "inverter_state": value("workingMode"),
         }
 
