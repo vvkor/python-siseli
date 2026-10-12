@@ -350,7 +350,7 @@ SDK реализует только часть endpoint-каталога. Пуб
 | Список устройств и подробности устройства | `get_devices()`, `get_all_devices()`, `get_device()` | `/apis/device/list`, `/apis/device/details` |
 | Состояние, атрибуты, группы и поток энергии устройства | `get_device_state()`, `get_device_attributes()`, `get_device_attribute_groups()`, `get_energy_flow()` | `/apis/deviceState/simple/*`, `/apis/device/query/attribute/group` |
 | История атрибутов и записей состояния | `get_attribute_history()`, `get_state_history()` | `/apis/deviceState/simple/attribute/*/v1` |
-| Удаленная конфигурация | `get_device_config()`, `get_cached_device_configs()`, `read_device_configs()`, `get_device_config_batch()`, `set_device_config()` | `/apis/remote/device/config*` |
+| Удаленная конфигурация | `get_device_config()`, `get_cached_device_configs()`, `read_device_configs()`, `get_device_config_batch()`, `set_device_config()`, `safe_set_device_config()` | `/apis/remote/device/config*` |
 | Станции, потоки, доход и сводки | `get_stations()`, `get_all_stations()`, `get_station()`, `get_station_energy_flow()`, `get_station_income()`, `get_station_summary()` | `/apis/station/*`, `/apis/stationOverView/*` |
 | Сводки устройства и владельца, дневная выработка и детали мощности | `get_device_summary()`, `get_device_energy_totals()`, `get_owner_summary()`, `get_device_generated_energy_daily()`, `get_device_power_daily_detail()` | `/apis/deviceOverView/*`, `/apis/ownerOverView/*` |
 | Тревоги и отчеты о тревогах | `get_latest_alarm()`, `get_alarms()`, `get_alarm_report_headers()`, `get_alarm_report()`, `get_alarm_reports()` | `/apis/alarm/*` |
@@ -358,6 +358,33 @@ SDK реализует только часть endpoint-каталога. Пуб
 | Справочники | `get_dictionary()` | `/apis/dictionary/data/{name}` |
 
 Остальные пути в каталоге обнаружены в HAR или permissions, но не имеют соответствующего публичного метода SDK.
+
+### Безопасная удаленная запись конфигурации
+
+Для обычной записи используйте `safe_set_device_config()`: метод проверяет ключ, уровень доступа и значение, сериализует записи для одного устройства, а после единственной попытки записи читает значение повторно. Публичный `set_device_config()` отправляет ключ и значение напрямую; он не применяет allowlist, проверку диапазонов, проверку уровня доступа или read-back, поэтому не является безопасной заменой.
+
+```python
+from siseli import ConfigAccess, ConfigWriteStatus
+
+result = await client.safe_set_device_config(
+    device.id,
+    key="buzzerEnabled",
+    value=True,
+)
+
+if result.status is ConfigWriteStatus.APPLIED:
+    print("Значение установлено:", result.current)
+elif result.status is ConfigWriteStatus.UNKNOWN:
+    print("Результат записи не подтвержден; не повторяйте запись автоматически")
+```
+
+- По умолчанию разрешен только риск `SAFE`. Для параметров с риском `ADVANCED` или `CRITICAL` передайте соответствующий `access=ConfigAccess.ADVANCED` или `access=ConfigAccess.CRITICAL`. Неизвестные и не включенные в `CONFIG_SPECS` ключи отклоняются; перечень и диапазоны намеренно ограничены.
+- Для ключей напряжения батареи обязательно явно передайте `battery_nominal_voltage` (`12`, `24` или `48`). Необходимые соседние значения конфигурации SDK читает сам; если такое чтение не удается или проверка порядка напряжений не проходит, запись не отправляется.
+- `dry_run=True` выполняет чтения и проверки, но не отправляет запись и возвращает результат со статусом `DRY_RUN`. Если значение уже установлено, запись также пропускается; результат имеет статус `APPLIED` и сообщение `already set`.
+- SDK сериализует вызовы безопасной записи для одного устройства и выдерживает не менее трех секунд между фактическими попытками записи.
+- SDK не повторяет попытку записи. После успешного ответа или неопределенного исхода он сверяет значение чтением: подтвержденное значение дает `APPLIED`, а тайм-аут/сетевая неопределенность или несовпадение read-back — `UNKNOWN`. В результате также доступны `requested`, `previous`, `current`, `error_code` и `message`. `UNKNOWN` не означает, что устройство точно не применило изменение: не повторяйте такую запись автоматически.
+- Неподдерживаемый ключ/значение вызывает `ConfigValidationError`, недостаточный доступ — `ConfigAccessDenied`. Другие ошибки API и HTTP 4xx, кроме HTTP 408 и 429, считаются определенным отказом и вызывают `ConfigRejected`; коды API 71301 и 70138 и прочие неопределенные сетевые ошибки проходят проверку read-back и могут дать `UNKNOWN`.
+- `settingDeviceOutputSourcePriority` не входит в список разрешенных для записи ключей: отображаемое облаком значение `0` (`SUB` / SBU) противоречит порядку PI30, а полное соответствие значений не подтверждено. Чтение этого ключа отдельно не запрещено.
 
 ### Форматы overview
 
