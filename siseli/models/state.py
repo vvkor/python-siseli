@@ -57,7 +57,7 @@ class AttributeMetadata:
 
 @dataclass
 class AttributeGroup:
-    """A group of related state attributes."""
+    """A group of related device attributes."""
 
     id: str
     key: str
