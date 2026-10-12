@@ -23,8 +23,9 @@ def make_state(values: dict) -> DeviceState:
 
 
 def test_to_sensor_data_maps_fields_and_converts_power_units() -> None:
-    result = make_state({
-        "batteryCapacity": 85,
+    result = make_state(
+        {
+            "batteryCapacity": 85,
         "batteryVoltage": 52.1,
         "batteryChargingCurrent": 10.5,
         "batteryDischargeCurrent": 0,
@@ -36,8 +37,9 @@ def test_to_sensor_data_maps_fields_and_converts_power_units() -> None:
         "acOutputVoltage": 230,
         "acOutputFrequency": 50,
         "acOutputActivePower": 0.420,
-        "workingMode": "B",
-    }).to_sensor_data()
+            "workingMode": "B",
+        }
+    ).to_sensor_data()
 
     assert result["battery_soc"] == pytest.approx(85)
     assert result["battery_current"] == pytest.approx(10.5)
@@ -49,16 +51,18 @@ def test_to_sensor_data_maps_fields_and_converts_power_units() -> None:
 
 
 def test_to_sensor_data_handles_discharge_and_invalid_values() -> None:
-    result = make_state({
-        "batteryVoltage": 52.1,
+    result = make_state(
+        {
+            "batteryVoltage": 52.1,
         "batteryChargingCurrent": 0,
         "batteryDischargeCurrent": 4.2,
         "pvInputVoltage1": "--",
         "pv1InputCurrentForBattery": True,
         "generationPower": float("nan"),
         "acOutputActivePower": "not available",
-        "workingMode": "B",
-    }).to_sensor_data()
+            "workingMode": "B",
+        }
+    ).to_sensor_data()
 
     assert result["battery_current"] == pytest.approx(-4.2)
     assert result["battery_power"] == pytest.approx(-52.1 * 4.2)
@@ -70,6 +74,8 @@ def test_to_sensor_data_handles_discharge_and_invalid_values() -> None:
 
 
 def test_to_sensor_data_returns_none_when_derived_inputs_missing() -> None:
-    result = make_state({"batteryVoltage": 12.8, "batteryChargingCurrent": 1}).to_sensor_data()
+    result = make_state(
+        {"batteryVoltage": 12.8, "batteryChargingCurrent": 1}
+    ).to_sensor_data()
     assert result["battery_current"] is None
     assert result["battery_power"] is None
