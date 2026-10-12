@@ -90,13 +90,9 @@ CONFIG_SPECS: dict[str, ConfigSpec] = {
         ConfigSpec("overloadBypass", "Overload bypass", ConfigKind.ENUM, ConfigAccess.ADVANCED, _ON_OFF),
         ConfigSpec("powerSavingEnable", "Power saving", ConfigKind.ENUM, ConfigAccess.ADVANCED, _ON_OFF),
         ConfigSpec("setBatteryEqualizationEnable", "Battery equalization", ConfigKind.ENUM, ConfigAccess.ADVANCED, _ON_OFF),
-        ConfigSpec(
-            "settingDeviceOutputSourcePriority",
-            "Output source priority",
-            ConfigKind.ENUM,
-            ConfigAccess.ADVANCED,
-            {"0": "Utility first", "1": "Solar first", "2": "SBU"},
-        ),
+        # settingDeviceOutputSourcePriority is intentionally absent: in the cloud,
+        # value 0 is displayed as "SUB" (SBU), which contradicts the PI30 order,
+        # and the full value mapping is not verified. Add it only once confirmed.
         ConfigSpec(
             "settingDeviceChargerPriority",
             "Charger source priority",
