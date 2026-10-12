@@ -20,8 +20,10 @@ from .config import (
     fetch_device_config,
     fetch_device_config_batch_details,
     fetch_device_configs,
+    safe_write_device_config,
     write_device_config,
 )
+from .config_safety import ConfigAccess, ConfigWriteResult
 from .const import BASE_URL, DEFAULT_DATA_SOURCE, DEFAULT_PAGE_SIZE, DEFAULT_TIMEOUT
 from .dashboard import (
     fetch_dashboard_daily_generation_time_rank,
@@ -114,7 +116,8 @@ class SiseliClient:
             response.raise_for_status()
         except httpx.HTTPStatusError as exc:
             raise NetworkError(
-                f"HTTP {exc.response.status_code} for {method} {path}"
+                f"HTTP {exc.response.status_code} for {method} {path}",
+                http_status=exc.response.status_code,
             ) from exc
         except httpx.HTTPError as exc:
             raise NetworkError(f"Request failed for {method} {path}: {exc}") from exc
@@ -286,13 +289,34 @@ class SiseliClient:
         key: str,
         value: Any,
         config_id: str = "",
-    ) -> AttributeMetadata:
+    ) -> AttributeMetadata | None:
         return await write_device_config(
             self._request,
             device_id,
             key=key,
             value=value,
             config_id=config_id,
+        )
+
+    async def safe_set_device_config(
+        self,
+        device_id: str,
+        *,
+        key: str,
+        value: Any,
+        access: ConfigAccess = ConfigAccess.SAFE,
+        battery_nominal_voltage: int | None = None,
+        dry_run: bool = False,
+    ) -> ConfigWriteResult:
+        """Validated, serialized and verified write; never retried."""
+        return await safe_write_device_config(
+            self._request,
+            device_id,
+            key=key,
+            value=value,
+            access=access,
+            battery_nominal_voltage=battery_nominal_voltage,
+            dry_run=dry_run,
         )
 
     async def get_stations(

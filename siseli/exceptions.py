@@ -44,4 +44,12 @@ class ApiError(SiseliError):
 
 
 class NetworkError(SiseliError):
-    """Raised on network-level failures (connection errors, timeouts, etc.)."""
+    """Raised on network-level failures (connection errors, timeouts, etc.).
+
+    Attributes:
+        http_status: HTTP status code for HTTP status errors, otherwise *None*.
+    """
+
+    def __init__(self, message: str = "", *, http_status: int | None = None) -> None:
+        self.http_status = http_status
+        super().__init__(message)
