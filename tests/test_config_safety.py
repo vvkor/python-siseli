@@ -75,8 +75,10 @@ def test_unsupported_key_rejected():
 def test_access_levels():
     assert validate_config_value("buzzerEnabled", True) == "1"
     with pytest.raises(ConfigAccessDenied):
-        validate_config_value("settingDeviceOutputSourcePriority", "1")
-    assert validate_config_value("settingDeviceOutputSourcePriority", 1, access=ConfigAccess.ADVANCED) == "1"
+        validate_config_value("settingDeviceGridWorkingRange", "1")
+    assert validate_config_value("settingDeviceGridWorkingRange", 1, access=ConfigAccess.ADVANCED) == "1"
+    with pytest.raises(ConfigValidationError):
+        validate_config_value("settingDeviceOutputSourcePriority", "0", access=ConfigAccess.CRITICAL)
     with pytest.raises(ConfigAccessDenied):
         validate_config_value(
             "setBatteryCutOffVoltage",
