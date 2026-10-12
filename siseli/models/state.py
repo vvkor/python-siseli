@@ -104,6 +104,19 @@ class DeviceState:
         def number(api_key: str) -> float | None:
             return _numeric(value(api_key))
 
+        def display(api_key: str) -> str | None:
+            attribute = self.fields.get(api_key)
+            text = attribute.value_display if attribute is not None else None
+            return text.strip() or None if isinstance(text, str) else None
+
+        def power_watts(api_key: str) -> float | None:
+            # The API reports power as kW unless the unit is explicitly W.
+            result = number(api_key)
+            attribute = self.fields.get(api_key)
+            if result is None or attribute is None:
+                return result
+            return result if attribute.unit == "W" else result * 1000
+
         voltage = number("batteryVoltage")
         charging = number("batteryChargingCurrent")
         discharging = number("batteryDischargeCurrent")
@@ -112,8 +125,8 @@ class DeviceState:
             if charging is not None and discharging is not None
             else None
         )
-        pv_power = number("generationPower")
-        load_power = number("acOutputActivePower")
+        pv_power = power_watts("generationPower")
+        load_power = power_watts("acOutputActivePower")
         battery_power = (
             voltage * current
             if voltage is not None and current is not None
@@ -126,13 +139,40 @@ class DeviceState:
             "battery_power": battery_power,
             "pv_voltage": number("pvInputVoltage1"),
             "pv_current": number("pv1InputCurrentForBattery"),
-            "pv_power": pv_power * 1000 if pv_power is not None else None,
+            "pv_power": pv_power,
             "grid_voltage": number("gridVoltage"),
             "grid_frequency": number("gridFrequency"),
             "output_voltage": number("acOutputVoltage"),
             "output_frequency": number("acOutputFrequency"),
-            "load_power": load_power * 1000 if load_power is not None else None,
+            "load_power": load_power,
             "inverter_state": value("workingMode"),
+            "inverter_mode": display("workingMode"),
+            "load_percent": number("outputLoadPercent"),
+            "load_apparent_power": number("ratedApparentPower"),
+            "heat_sink_temperature": number("inverterHeatSinkTemperature"),
+            "bus_voltage": number("busVoltage"),
+            "charging_status": display("chargingStatus"),
+            "scc_charging_status": display("sccChargingStatus"),
+            "ac_charging_status": display("acChargingStatus"),
+            "mains_status": display("mainsStatus"),
+            "load_status": display("loadStatus"),
+            "charger_source_priority": display("chargerSourcePriority"),
+            "output_source_priority": display("outputSourcePriority"),
+            "battery_type": display("batteryType"),
+        }
+
+    def to_device_info(self) -> dict[str, str | None]:
+        """Return identification fields suitable for a device registry entry."""
+        def display(api_key: str) -> str | None:
+            attribute = self.fields.get(api_key)
+            text = attribute.value_display if attribute is not None else None
+            return text.strip() or None if isinstance(text, str) else None
+
+        return {
+            "protocol": display("protocolId"),
+            "machine_type": display("machineType"),
+            "firmware_version": display("mainCpuFirmwareVersion"),
+            "secondary_firmware_version": display("secondaryCpuFirmwareVersion"),
         }
 
 

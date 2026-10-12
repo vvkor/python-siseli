@@ -42,6 +42,13 @@ from .models.dictionary import DictionaryData
 from .models.history import HistorySeries
 from .models.state import AttributeGroupSet, AttributeMetadata, DeviceState, EnergyFlow
 from .models.station import Station, StationEnergyFlow, StationSummary
+from .overview import (
+    ENERGY_SUMMARY_CATEGORY,
+    fetch_device_generated_energy_daily,
+    fetch_device_power_class_daily_detail,
+    fetch_device_state_summary,
+    fetch_owner_state_summary,
+)
 from .state import (
     fetch_device_attribute_groups,
     fetch_device_attributes,
@@ -368,6 +375,57 @@ class SiseliClient:
             aggregation,
             time=time,
         )
+
+    async def get_device_summary(
+        self,
+        device_id: str,
+        aggregation: str,
+        *,
+        summary_category_key: str = ENERGY_SUMMARY_CATEGORY,
+        time: datetime | str | None = None,
+    ) -> StationSummary:
+        return await fetch_device_state_summary(
+            self._request,
+            device_id,
+            aggregation,
+            summary_category_key=summary_category_key,
+            time=time,
+        )
+
+    async def get_device_energy_totals(self, device_id: str) -> dict[str, float | None]:
+        """Return lifetime energy counters (kWh) keyed by property key."""
+        summary = await self.get_device_summary(device_id, "total")
+        return summary.to_totals()
+
+    async def get_owner_summary(
+        self,
+        aggregation: str,
+        *,
+        summary_category_key: str = ENERGY_SUMMARY_CATEGORY,
+        time: datetime | str | None = None,
+    ) -> StationSummary:
+        return await fetch_owner_state_summary(
+            self._request,
+            aggregation,
+            summary_category_key=summary_category_key,
+            time=time,
+        )
+
+    async def get_device_generated_energy_daily(
+        self,
+        device_id: str,
+        *,
+        time: datetime | str | None = None,
+    ) -> list[TimePoint]:
+        return await fetch_device_generated_energy_daily(self._request, device_id, time=time)
+
+    async def get_device_power_daily_detail(
+        self,
+        device_id: str,
+        *,
+        time: datetime | str | None = None,
+    ) -> dict[str, Any]:
+        return await fetch_device_power_class_daily_detail(self._request, device_id, time=time)
 
     async def get_latest_alarm(
         self,

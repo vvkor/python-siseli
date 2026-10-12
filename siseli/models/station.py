@@ -71,6 +71,22 @@ class SummaryProperty:
     has_real_time_points: bool | None
     raw: dict = field(repr=False)
 
+    @property
+    def key(self) -> str:
+        return self.property.get("key", "")
+
+    @property
+    def unit(self) -> str:
+        return self.property.get("unit") or self.property.get("unitI18n", {}).get("en", "")
+
+    @property
+    def latest_value(self) -> float | None:
+        """Value of the last time point, or None when the series is empty."""
+        for point in reversed(self.time_points):
+            if isinstance(point.value, (int, float)) and not isinstance(point.value, bool):
+                return float(point.value)
+        return None
+
 
 @dataclass
 class StationSummary:
@@ -80,3 +96,11 @@ class StationSummary:
     properties: list[SummaryProperty]
     has_real_time_points: bool
     raw: dict = field(repr=False)
+
+    def get(self, key: str) -> SummaryProperty | None:
+        """Return a summary property by its key, or None if absent."""
+        return next((item for item in self.properties if item.key == key), None)
+
+    def to_totals(self) -> dict[str, float | None]:
+        """Return the latest value of every property keyed by property key."""
+        return {item.key: item.latest_value for item in self.properties}
