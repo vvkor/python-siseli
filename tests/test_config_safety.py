@@ -78,13 +78,18 @@ def test_access_levels():
         validate_config_value("settingDeviceOutputSourcePriority", "1")
     assert validate_config_value("settingDeviceOutputSourcePriority", 1, access=ConfigAccess.ADVANCED) == "1"
     with pytest.raises(ConfigAccessDenied):
-        validate_config_value("setBatteryCutOffVoltage", 11, access=ConfigAccess.ADVANCED)
+        validate_config_value(
+            "setBatteryCutOffVoltage",
+            11,
+            access=ConfigAccess.ADVANCED,
+            battery_nominal_voltage=12,
+        )
 
 
 def test_enum_and_number_bounds():
     with pytest.raises(ConfigValidationError):
         validate_config_value("buzzerEnabled", "2")
-    kw = {"access": ConfigAccess.CRITICAL, "related_values": VOLTAGES}
+    kw = {"access": ConfigAccess.CRITICAL, "battery_nominal_voltage": 12, "related_values": VOLTAGES}
     with pytest.raises(ConfigValidationError):
         validate_config_value("setBatteryCVChargeVoltage", 16, **kw)
     with pytest.raises(ConfigValidationError):
@@ -100,8 +105,35 @@ def test_enum_and_number_bounds():
     ) == 28.4
 
 
+def test_battery_scaled_key_requires_explicit_nominal_voltage():
+    with pytest.raises(
+        ConfigValidationError,
+        match="battery nominal voltage must be specified explicitly for setBatteryCutOffVoltage",
+    ):
+        validate_config_value(
+            "setBatteryCutOffVoltage",
+            12,
+            access=ConfigAccess.CRITICAL,
+            related_values=VOLTAGES,
+        )
+
+    cloud = FakeCloud(VOLTAGES)
+    with pytest.raises(ConfigValidationError, match="must be specified explicitly"):
+        run(cloud, "setBatteryCutOffVoltage", 12, access=ConfigAccess.CRITICAL)
+    assert cloud.writes == []
+
+
+def test_non_battery_scaled_keys_need_no_nominal_voltage():
+    assert validate_config_value("buzzerEnabled", True) == "1"
+    assert validate_config_value(
+        "setMaxChargingCurrent",
+        60,
+        access=ConfigAccess.CRITICAL,
+    ) == "60"
+
+
 def test_voltage_order_enforced():
-    kw = {"access": ConfigAccess.CRITICAL, "related_values": VOLTAGES}
+    kw = {"access": ConfigAccess.CRITICAL, "battery_nominal_voltage": 12, "related_values": VOLTAGES}
     with pytest.raises(ConfigValidationError):
         validate_config_value("setBatteryRechargingVoltage", 13.4, **kw)
     with pytest.raises(ConfigValidationError):
@@ -151,6 +183,116 @@ def test_network_error_is_unknown_or_applied():
     assert run(cloud, "buzzerEnabled", 1).status is ConfigWriteStatus.UNKNOWN
 
 
+@pytest.mark.parametrize("status", [400, 403, 404])
+def test_http_4xx_is_rejected(status):
+    cloud = FakeCloud(
+        {"buzzerEnabled": "0"}, write_error=NetworkError("denied", http_status=status)
+    )
+    with pytest.raises(ConfigRejected):
+        run(cloud, "buzzerEnabled", 1)
+
+
+@pytest.mark.parametrize("status", [None, 408, 429, 500, 503])
+def test_transient_network_error_is_unknown(status):
+    cloud = FakeCloud(
+        {"buzzerEnabled": "0"}, write_error=NetworkError("x", http_status=status)
+    )
+    assert run(cloud, "buzzerEnabled", 1).status is ConfigWriteStatus.UNKNOWN
+    assert len(cloud.writes) == 1
+
+
+def test_write_non_dict_response_is_loud():
+    import asyncio
+
+    from siseli.config import write_device_config
+    from siseli.exceptions import SiseliError
+
+    async def request(*args, **kwargs):
+        return ["unexpected"]
+
+    with pytest.raises(SiseliError):
+        asyncio.run(write_device_config(request, "d", key="buzzerEnabled", value=1))
+
+    async def ok(*args, **kwargs):
+        return None
+
+    assert asyncio.run(write_device_config(ok, "d", key="buzzerEnabled", value=1)) is None
+
+
+class BlockingCloud(FakeCloud):
+    def __init__(self, values):
+        super().__init__(values)
+        self.release = None
+        self.started = []
+
+    async def __call__(self, method, path, **kwargs):
+        if path.endswith("config/write"):
+            self.started.append(kwargs["json"]["value"])
+            if self.release is not None and len(self.started) == 1:
+                await self.release.wait()
+        return await super().__call__(method, path, **kwargs)
+
+
+def test_writes_serialized_per_device_but_not_across_devices():
+    import asyncio
+
+    async def scenario():
+        cloud = BlockingCloud({"buzzerEnabled": "0"})
+        cloud.release = asyncio.Event()
+        other = BlockingCloud({"buzzerEnabled": "0"})
+        kw = {"key": "buzzerEnabled", "min_interval": 0}
+        first = asyncio.create_task(
+            safe_write_device_config(cloud, "ser-dev-a", value=1, **kw)
+        )
+        while not cloud.started:
+            await asyncio.sleep(0)
+        second = asyncio.create_task(
+            safe_write_device_config(cloud, "ser-dev-a", value=0, **kw)
+        )
+        third = await asyncio.wait_for(
+            safe_write_device_config(other, "ser-dev-b", value=1, **kw), 1
+        )
+        for _ in range(20):
+            await asyncio.sleep(0)
+        assert third.applied
+        assert cloud.started == ["1"]
+        assert not second.done()
+        cloud.release.set()
+        await asyncio.gather(first, second)
+        assert cloud.started == ["1", "0"]
+
+    asyncio.run(scenario())
+
+
+def test_min_interval_between_writes(monkeypatch):
+    import asyncio
+
+    from siseli import config
+
+    now = [100.0]
+    sleeps = []
+
+    async def fake_sleep(delay):
+        sleeps.append(delay)
+        now[0] += delay
+
+    monkeypatch.setattr(config, "_monotonic", lambda: now[0])
+    monkeypatch.setattr(config, "_sleep", fake_sleep)
+    monkeypatch.setitem(config._last_write, "interval-dev", 99.0)
+
+    async def scenario():
+        cloud = FakeCloud({"buzzerEnabled": "0"})
+        kw = {"key": "buzzerEnabled", "min_interval": 3.0}
+        await safe_write_device_config(cloud, "interval-dev", value=1, **kw)
+        now[0] += 1.0
+        await safe_write_device_config(cloud, "interval-dev", value=0, **kw)
+
+    asyncio.run(scenario())
+    assert sleeps == [pytest.approx(2.0), pytest.approx(2.0)]
+    asyncio.run(scenario())
+    config._last_write.pop("interval-dev", None)
+
+
 def test_definite_rejection_raises():
     cloud = FakeCloud({"buzzerEnabled": "0"}, write_error=ApiError(20210, "no rights"))
     with pytest.raises(ConfigRejected):
@@ -162,12 +304,24 @@ def test_fail_closed_when_related_read_fails():
     del values["setBatteryRechargingVoltage"]
     cloud = FakeCloud(values)
     with pytest.raises(ApiError):
-        run(cloud, "setBatteryCutOffVoltage", 11.5, access=ConfigAccess.CRITICAL)
+        run(
+            cloud,
+            "setBatteryCutOffVoltage",
+            11.5,
+            access=ConfigAccess.CRITICAL,
+            battery_nominal_voltage=12,
+        )
     assert cloud.writes == []
 
 
 def test_voltage_write_sends_number():
     cloud = FakeCloud(VOLTAGES)
-    result = run(cloud, "setBatteryFloatChargingVoltage", 13.6, access=ConfigAccess.CRITICAL)
+    result = run(
+        cloud,
+        "setBatteryFloatChargingVoltage",
+        13.6,
+        access=ConfigAccess.CRITICAL,
+        battery_nominal_voltage=12,
+    )
     assert result.applied
     assert cloud.writes == [("setBatteryFloatChargingVoltage", 13.6)]

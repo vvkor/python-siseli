@@ -116,7 +116,8 @@ class SiseliClient:
             response.raise_for_status()
         except httpx.HTTPStatusError as exc:
             raise NetworkError(
-                f"HTTP {exc.response.status_code} for {method} {path}"
+                f"HTTP {exc.response.status_code} for {method} {path}",
+                http_status=exc.response.status_code,
             ) from exc
         except httpx.HTTPError as exc:
             raise NetworkError(f"Request failed for {method} {path}: {exc}") from exc
@@ -304,7 +305,7 @@ class SiseliClient:
         key: str,
         value: Any,
         access: ConfigAccess = ConfigAccess.SAFE,
-        battery_nominal_voltage: int = 12,
+        battery_nominal_voltage: int | None = None,
         dry_run: bool = False,
     ) -> ConfigWriteResult:
         """Validated, serialized and verified write; never retried."""

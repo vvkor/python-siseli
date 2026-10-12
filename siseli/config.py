@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import time
+import weakref
 from typing import Any, Awaitable, Callable
 
 from ._utils import parse_datetime
@@ -18,7 +19,7 @@ from .config_safety import (
     validate_config_value,
     values_equal,
 )
-from .exceptions import ApiError, NetworkError
+from .exceptions import ApiError, NetworkError, SiseliError
 from .models.config import ConfigBatchRead
 from .models.state import AttributeMetadata
 from .state import _parse_attribute_metadata
@@ -87,8 +88,10 @@ async def write_device_config(
         params={"deviceId": device_id},
         json={"id": config_id, "key": key, "value": value},
     )
-    if not isinstance(data, dict):
+    if data is None:
         return None
+    if not isinstance(data, dict):
+        raise SiseliError(f"Unexpected config write response type: {type(data).__name__}")
     return _parse_attribute_metadata(data, key)
 
 
@@ -134,8 +137,18 @@ async def fetch_device_config_batch_details(
 # Cloud codes where the DTU/inverter outcome is not known to the caller.
 _UNKNOWN_OUTCOME_CODES = frozenset({71301, 70138})
 MIN_WRITE_INTERVAL = 3.0
-_locks: dict[str, asyncio.Lock] = {}
+# Locks are per event loop so they stay valid across repeated asyncio.run calls.
+_locks: weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, dict[str, asyncio.Lock]] = (
+    weakref.WeakKeyDictionary()
+)
 _last_write: dict[str, float] = {}
+_monotonic = time.monotonic
+_sleep = asyncio.sleep
+
+
+def _device_lock(device_id: str) -> asyncio.Lock:
+    per_loop = _locks.setdefault(asyncio.get_running_loop(), {})
+    return per_loop.setdefault(device_id, asyncio.Lock())
 
 
 def config_value(meta: AttributeMetadata) -> Any:
@@ -154,7 +167,7 @@ async def safe_write_device_config(
     key: str,
     value: Any,
     access: ConfigAccess = ConfigAccess.SAFE,
-    battery_nominal_voltage: int = 12,
+    battery_nominal_voltage: int | None = None,
     dry_run: bool = False,
     min_interval: float = MIN_WRITE_INTERVAL,
 ) -> ConfigWriteResult:
@@ -168,7 +181,7 @@ async def safe_write_device_config(
     if spec.risk > access:
         raise ConfigAccessDenied(f"{key} requires access level {spec.risk.name.lower()}")
 
-    lock = _locks.setdefault(device_id, asyncio.Lock())
+    lock = _device_lock(device_id)
     async with lock:
         # Fail closed: any read needed for safety checks must succeed.
         previous = await _read_value(request, device_id, key)
@@ -193,9 +206,9 @@ async def safe_write_device_config(
                 message="already set",
             )
 
-        wait = min_interval - (time.monotonic() - _last_write.get(device_id, -1e9))
+        wait = min_interval - (_monotonic() - _last_write.get(device_id, -1e9))
         if wait > 0:
-            await asyncio.sleep(wait)
+            await _sleep(wait)
         error_code: int | None = None
         message = ""
         try:
@@ -205,9 +218,12 @@ async def safe_write_device_config(
                 raise ConfigRejected(exc.code, exc.message) from exc
             error_code, message = exc.code, exc.message
         except NetworkError as exc:
+            status = exc.http_status
+            if status is not None and 400 <= status < 500 and status not in (408, 429):
+                raise ConfigRejected(status, f"HTTP {status} rejected the write") from exc
             message = str(exc)
         finally:
-            _last_write[device_id] = time.monotonic()
+            _last_write[device_id] = _monotonic()
 
         try:
             current = await _read_value(request, device_id, key)

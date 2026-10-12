@@ -202,7 +202,7 @@ def validate_config_value(
     value: Any,
     *,
     access: ConfigAccess = ConfigAccess.SAFE,
-    battery_nominal_voltage: int = 12,
+    battery_nominal_voltage: int | None = None,
     related_values: Mapping[str, Any] | None = None,
 ) -> Any:
     """Validate a write and return the value to put on the wire.
@@ -214,7 +214,14 @@ def validate_config_value(
         raise ConfigValidationError(f"Writing {key} is not supported by the cloud")
     spec = get_spec(key)
     ensure_access(spec, access)
-    if battery_nominal_voltage not in _BATTERY_NOMINALS:
+    if battery_nominal_voltage is None and spec.scales_with_battery:
+        raise ConfigValidationError(
+            f"battery nominal voltage must be specified explicitly for {key}"
+        )
+    if (
+        battery_nominal_voltage is not None
+        and battery_nominal_voltage not in _BATTERY_NOMINALS
+    ):
         raise ConfigValidationError(
             f"Unsupported battery nominal voltage: {battery_nominal_voltage}"
         )
