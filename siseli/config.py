@@ -65,7 +65,7 @@ async def fetch_device_config(
         "POST",
         "/apis/remote/device/config/read",
         params={"deviceId": device_id},
-        json={"id": config_id, "key": key},
+        json={"id": config_id or device_id, "key": key},
     )
     return _parse_attribute_metadata(data, key)
 
@@ -86,7 +86,7 @@ async def write_device_config(
         "POST",
         "/apis/remote/device/config/write",
         params={"deviceId": device_id},
-        json={"id": config_id, "key": key, "value": value},
+        json={"id": config_id or device_id, "key": key, "value": value},
     )
     if data is None:
         return None
@@ -104,6 +104,7 @@ async def fetch_cached_device_configs(
         "POST",
         "/apis/remote/device/configs/cache/get",
         params={"deviceId": device_id},
+        json={"id": device_id},
     )
     return _parse_config_map(data)
 
