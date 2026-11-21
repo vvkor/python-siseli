@@ -2,12 +2,11 @@
 
 from __future__ import annotations
 
-import pytest
 import httpx
+import pytest
 
 from siseli.auth import Auth, _extract_api_message
-from siseli.exceptions import AuthenticationError, NetworkError
-
+from siseli.exceptions import AuthenticationError, NetworkError, RateLimitError
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -140,17 +139,17 @@ async def test_login_403_raises_authentication_error() -> None:
 
 
 @pytest.mark.asyncio
-async def test_login_429_raises_authentication_error() -> None:
+async def test_login_429_raises_rate_limit_error() -> None:
     response = _make_response(429, json_body={"message": "Too Many Requests"})
     client = _FakeAsyncClient(response)
 
     auth = Auth("user@example.com", "secret")
-    with pytest.raises(AuthenticationError) as exc_info:
+    with pytest.raises(RateLimitError) as exc_info:
         await auth.login(client)
 
-    err = exc_info.value
-    assert err.http_status == 429
-    assert err.api_message == "Too Many Requests"
+    # Throttling is not a credential problem: it must not trigger HA re-auth.
+    assert not isinstance(exc_info.value, AuthenticationError)
+    assert exc_info.value.http_status == 429
 
 
 @pytest.mark.asyncio

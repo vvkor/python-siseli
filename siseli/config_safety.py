@@ -231,15 +231,17 @@ def validate_config_value(
         return text
 
     number = _as_number(key, value)
-    low, high = _bounds(spec, battery_nominal_voltage)
+    nominal = battery_nominal_voltage or 12
+    low, high = _bounds(spec, nominal)
     if not low - 1e-9 <= number <= high + 1e-9:
         raise ConfigValidationError(f"{key}: {number} is outside {low:g}..{high:g} {spec.unit}")
-    step = spec.step * (battery_nominal_voltage / 12 if spec.scales_with_battery else 1)
-    steps = (number - low) / step
-    if abs(steps - round(steps)) > 1e-6:
-        raise ConfigValidationError(f"{key}: {number} does not match step {step:g}")
-    if spec.step is not None and spec.step < 1:
-        number = round(number, 1)
+    if spec.step is not None:
+        step = spec.step * (nominal / 12 if spec.scales_with_battery else 1)
+        steps = (number - low) / step
+        if abs(steps - round(steps)) > 1e-6:
+            raise ConfigValidationError(f"{key}: {number} does not match step {step:g}")
+        if spec.step < 1:
+            number = round(number, 1)
     _check_order(key, number, related_values or {})
     wire: Any = int(number) if float(number).is_integer() else number
     return str(wire) if spec.wire_as_string else wire
@@ -282,6 +284,32 @@ def _check_order(key: str, number: float, related: Mapping[str, Any]) -> None:
                 raise ConfigValidationError(
                     f"{low} must be {op} {high} (got {lo:g} and {hi:g})"
                 )
+
+
+# A battery bank rests/charges between roughly 0.8x and 1.3x its nominal voltage.
+_PLAUSIBLE_VOLTAGE_RATIO = (0.8, 1.3)
+
+
+def check_battery_nominal(nominal: int, measured_voltage: Any) -> None:
+    """Reject a declared nominal voltage that contradicts the live reading.
+
+    Voltage thresholds are scaled by the nominal voltage, so declaring 24 V
+    for a 12 V bank would write dangerously high limits.
+    """
+    try:
+        measured = float(measured_voltage)
+    except (TypeError, ValueError):
+        measured = float("nan")
+    if not math.isfinite(measured) or measured <= 0:
+        raise ConfigValidationError(
+            "cannot verify battery nominal voltage: live battery voltage is unavailable"
+        )
+    low, high = (nominal * ratio for ratio in _PLAUSIBLE_VOLTAGE_RATIO)
+    if not low <= measured <= high:
+        raise ConfigValidationError(
+            f"battery nominal voltage {nominal} V contradicts measured "
+            f"{measured:g} V (expected {low:g}..{high:g} V)"
+        )
 
 
 def values_equal(expected: Any, actual: Any) -> bool:

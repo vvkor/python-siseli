@@ -12,8 +12,8 @@ class TokenInfo:
 
     access_token: str
     refresh_token: str
-    access_token_expires_at: datetime
-    refresh_token_expires_at: datetime
+    access_token_expires_at: datetime | None
+    refresh_token_expires_at: datetime | None
     auth_id: str
     account: str
     user_id: str

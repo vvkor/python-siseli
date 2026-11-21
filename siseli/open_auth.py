@@ -146,13 +146,18 @@ def attach_open_auth(
         Override the default production encrypted secret.
     """
     secret = decrypt_open_secret(app_id, encrypted_secret)
-    timezone = getattr(client, "_timezone", "UTC")
+    timezone: str = (
+        getattr(client, "timezone", None) or getattr(client, "_timezone", None) or "UTC"
+    )
+    http = getattr(client, "http_client", None) or client._http
+    # A shared (injected) httpx client may talk to other hosts: sign only ours.
+    own_host = getattr(getattr(http, "base_url", None), "host", None) or None
 
-    async def _sign_request(request: "httpx.Request") -> None:
+    async def _sign_request(request: httpx.Request) -> None:
+        if own_host and request.url.host != own_host:
+            return
         nonce = uuid.uuid4().hex
-        query = request.url.query
-        if isinstance(query, bytes):
-            query = query.decode("utf-8")
+        query = request.url.query.decode("utf-8")
         body = request.content if request.method.upper() != "GET" else None
         headers = build_open_headers(
             method=request.method,
@@ -165,4 +170,4 @@ def attach_open_auth(
         )
         request.headers.update(headers)
 
-    client._http.event_hooks["request"].append(_sign_request)
+    http.event_hooks["request"].append(_sign_request)

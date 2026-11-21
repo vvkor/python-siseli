@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import asyncio
+import logging
+from collections.abc import Iterable
 from datetime import datetime
-from typing import Any, Iterable
+from typing import Any
 
 import httpx
 
@@ -33,7 +36,13 @@ from .dashboard import (
 )
 from .device import fetch_device_details, fetch_device_list
 from .dictionary import fetch_dictionary
-from .exceptions import ApiError, NetworkError
+from .exceptions import (
+    ApiError,
+    AuthenticationError,
+    InvalidResponseError,
+    NetworkError,
+    RateLimitError,
+)
 from .history import fetch_attribute_history, fetch_state_history
 from .models.alarm import Alarm, AlarmReport
 from .models.common import PagedResult, TimePoint
@@ -65,9 +74,36 @@ from .station import (
     fetch_station_state_summary,
 )
 
+_LOGGER = logging.getLogger(__name__)
+
+# Requests with side effects must pass ``retry=False`` to ``_request`` so they
+# are never re-sent after an ambiguous failure. This path list is a second
+# line of defence for the one write endpoint the SDK currently has.
+_NON_RETRYABLE_PATHS = ("/apis/remote/device/config/write",)
+_sleep = asyncio.sleep
+_RETRYABLE_STATUSES = frozenset({502, 503, 504})
+DEFAULT_MAX_RETRIES = 2
+DEFAULT_RETRY_BACKOFF = 0.5
+
+
+def _retry_after(response: httpx.Response) -> float | None:
+    try:
+        return max(0.0, float(response.headers.get("Retry-After", "")))
+    except ValueError:
+        return None
+
 
 class SiseliClient:
-    """Async client for the Siseli Cloud API."""
+    """Async client for the Siseli Cloud API.
+
+    Transient failures (connection errors, timeouts, HTTP 429/502/503/504) are
+    retried with exponential backoff, except for configuration writes, which
+    are never re-sent. An HTTP 401/403 triggers one transparent re-login.
+
+    Pass ``open_auth=True`` to sign requests with the Siseli Open API headers
+    (see :mod:`siseli.open_auth`). Pass ``http_client`` to reuse an existing
+    :class:`httpx.AsyncClient`; it is then not closed by :meth:`close`.
+    """
 
     def __init__(
         self,
@@ -77,54 +113,147 @@ class SiseliClient:
         base_url: str = BASE_URL,
         timezone: str = "UTC",
         timeout: float = DEFAULT_TIMEOUT,
+        max_retries: int = DEFAULT_MAX_RETRIES,
+        retry_backoff: float = DEFAULT_RETRY_BACKOFF,
+        http_client: httpx.AsyncClient | None = None,
+        open_auth: bool | tuple[str, str] = False,
     ) -> None:
         self._auth = Auth(account, password)
         self._timezone = timezone
-        self._http = httpx.AsyncClient(
+        self._max_retries = max(0, max_retries)
+        self._retry_backoff = max(0.0, retry_backoff)
+        self._auth_lock = asyncio.Lock()
+        self._owns_http = http_client is None
+        self._http = http_client or httpx.AsyncClient(
             base_url=base_url,
             timeout=timeout,
             headers={"Accept": "application/json"},
         )
+        if open_auth:
+            from .open_auth import attach_open_auth
+
+            if isinstance(open_auth, tuple):
+                attach_open_auth(
+                    self, app_id=open_auth[0], encrypted_secret=open_auth[1]
+                )
+            else:
+                attach_open_auth(self)
+
+    @property
+    def http_client(self) -> httpx.AsyncClient:
+        """The underlying HTTP client (for request hooks and diagnostics)."""
+        return self._http
+
+    @property
+    def timezone(self) -> str:
+        return self._timezone
 
     async def authenticate(self) -> None:
-        await self._auth.login(self._http)
+        async with self._auth_lock:
+            await self._auth.login(self._http)
 
     async def close(self) -> None:
-        await self._http.aclose()
+        if self._owns_http:
+            await self._http.aclose()
 
     async def __aenter__(self) -> SiseliClient:
-        await self.authenticate()
+        try:
+            await self.authenticate()
+        except BaseException:
+            await self.close()
+            raise
         return self
 
     async def __aexit__(self, *_: Any) -> None:
         await self.close()
 
     async def _ensure_authenticated(self) -> None:
-        if not self._auth.is_authenticated():
-            await self._auth.login(self._http)
+        if self._auth.is_authenticated():
+            return
+        async with self._auth_lock:
+            # Another task may have logged in while we waited for the lock.
+            if not self._auth.is_authenticated():
+                await self._auth.login(self._http)
+
+    async def _reauthenticate(self, stale_token: str) -> None:
+        """Log in again unless another task already replaced *stale_token*."""
+        async with self._auth_lock:
+            info = self._auth.token_info
+            if info is None or info.access_token == stale_token:
+                self._auth.invalidate()
+                await self._auth.login(self._http)
+
+    async def _send(self, method: str, path: str, **kwargs: Any) -> httpx.Response:
+        """Send one authenticated request, retrying transient failures."""
+        retryable = kwargs.pop("retry", True) and not path.startswith(
+            _NON_RETRYABLE_PATHS
+        )
+        attempts = 1 + (self._max_retries if retryable else 0)
+        reauthenticated = False
+        attempt = 0
+        while True:
+            await self._ensure_authenticated()
+            token = self._auth.access_token
+            headers = {"IOT-Token": token, "IOT-Time-Zone": self._timezone}
+            delay = self._retry_backoff * (2**attempt)
+            try:
+                response = await self._http.request(
+                    method, path, headers=headers, **kwargs
+                )
+            except httpx.HTTPError as exc:
+                attempt += 1
+                if attempt < attempts:
+                    _LOGGER.debug("Retrying %s %s after %s", method, path, exc)
+                    await _sleep(delay)
+                    continue
+                raise NetworkError(
+                    f"Request failed for {method} {path}: {exc}"
+                ) from exc
+
+            status = response.status_code
+            if status in (401, 403):
+                if not reauthenticated:
+                    reauthenticated = True
+                    await self._reauthenticate(token)
+                    continue
+                raise AuthenticationError(
+                    f"HTTP {status} for {method} {path}", http_status=status
+                )
+            if status == 429 or status in _RETRYABLE_STATUSES:
+                attempt += 1
+                if attempt < attempts:
+                    wait = _retry_after(response) if status == 429 else None
+                    await _sleep(delay if wait is None else min(wait, 30.0))
+                    continue
+                if status == 429:
+                    raise RateLimitError(
+                        f"HTTP 429 for {method} {path}",
+                        retry_after=_retry_after(response),
+                    )
+            if not response.is_success:
+                raise NetworkError(
+                    f"HTTP {status} for {method} {path}", http_status=status
+                )
+            return response
 
     async def _request(self, method: str, path: str, **kwargs: Any) -> Any:
-        await self._ensure_authenticated()
-        auth_headers = {
-            "IOT-Token": self._auth.access_token,
-            "IOT-Time-Zone": self._timezone,
-        }
-        try:
-            response = await self._http.request(
-                method, path, headers=auth_headers, **kwargs
-            )
-            response.raise_for_status()
-        except httpx.HTTPStatusError as exc:
-            raise NetworkError(
-                f"HTTP {exc.response.status_code} for {method} {path}",
-                http_status=exc.response.status_code,
-            ) from exc
-        except httpx.HTTPError as exc:
-            raise NetworkError(f"Request failed for {method} {path}: {exc}") from exc
+        """Send a request and return the ``data`` payload.
 
-        body = response.json()
+        Pass ``retry=False`` for anything with side effects.
+        """
+        response = await self._send(method, path, **kwargs)
+        try:
+            body = response.json()
+        except ValueError as exc:
+            raise InvalidResponseError(
+                f"Response for {method} {path} is not valid JSON"
+            ) from exc
+        if not isinstance(body, dict):
+            raise InvalidResponseError(
+                f"Response for {method} {path} has unexpected shape"
+            )
         if body.get("code") != 0:
-            raise ApiError(body.get("code", -1), body.get("message", ""))
+            raise ApiError(body.get("code", -1), str(body.get("message", "")))
         return body.get("data")
 
     async def get_devices(
@@ -158,7 +287,7 @@ class SiseliClient:
                 count=DEFAULT_PAGE_SIZE,
             )
             all_devices.extend(devices)
-            if len(all_devices) >= total:
+            if not devices or len(all_devices) >= total:
                 break
             page += 1
         return all_devices
@@ -350,7 +479,7 @@ class SiseliClient:
                 count=DEFAULT_PAGE_SIZE,
             )
             all_stations.extend(result.items)
-            if len(all_stations) >= result.total:
+            if not result.items or len(all_stations) >= result.total:
                 break
             page += 1
         return all_stations
@@ -414,6 +543,7 @@ class SiseliClient:
             aggregation,
             summary_category_key=summary_category_key,
             time=time,
+            tz=self._timezone,
         )
 
     async def get_device_energy_totals(self, device_id: str) -> dict[str, float | None]:
@@ -433,6 +563,7 @@ class SiseliClient:
             aggregation,
             summary_category_key=summary_category_key,
             time=time,
+            tz=self._timezone,
         )
 
     async def get_device_generated_energy_daily(
@@ -441,7 +572,9 @@ class SiseliClient:
         *,
         time: datetime | str | None = None,
     ) -> list[TimePoint]:
-        return await fetch_device_generated_energy_daily(self._request, device_id, time=time)
+        return await fetch_device_generated_energy_daily(
+            self._request, device_id, time=time, tz=self._timezone
+        )
 
     async def get_device_power_daily_detail(
         self,
@@ -449,7 +582,9 @@ class SiseliClient:
         *,
         time: datetime | str | None = None,
     ) -> dict[str, Any]:
-        return await fetch_device_power_class_daily_detail(self._request, device_id, time=time)
+        return await fetch_device_power_class_daily_detail(
+            self._request, device_id, time=time, tz=self._timezone
+        )
 
     async def get_latest_alarm(
         self,

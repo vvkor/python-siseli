@@ -2,24 +2,35 @@
 
 from __future__ import annotations
 
+import asyncio
+
 import pytest
 
-from siseli.config import safe_write_device_config
+from siseli.config import safe_write_device_config, write_device_config
 from siseli.config_safety import (
     ConfigAccess,
     ConfigAccessDenied,
     ConfigRejected,
     ConfigValidationError,
     ConfigWriteStatus,
+    check_battery_nominal,
     validate_config_value,
 )
-from siseli.exceptions import ApiError, NetworkError
+from siseli.exceptions import (
+    ApiError,
+    AuthenticationError,
+    InvalidResponseError,
+    NetworkError,
+)
 
 
 class FakeCloud:
     """Minimal request function emulating config read/write."""
 
-    def __init__(self, values, *, write_error=None, apply_on_error=False):
+    def __init__(
+        self, values, *, write_error=None, apply_on_error=False, battery_voltage=12.8
+    ):
+        self.battery_voltage = battery_voltage
         self.values = dict(values)
         self.write_error = write_error
         self.apply_on_error = apply_on_error
@@ -27,6 +38,15 @@ class FakeCloud:
 
     async def __call__(self, method, path, **kwargs):
         body = kwargs.get("json", {})
+        if path.endswith("/state/latest/v1"):
+            if self.battery_voltage is None:
+                return {"time": None, "fields": {}}
+            return {
+                "time": None,
+                "fields": {
+                    "batteryVoltage": {"value": self.battery_voltage, "unit": "V"}
+                },
+            }
         if path.endswith("config/read"):
             key = body["key"]
             if key not in self.values:
@@ -327,3 +347,102 @@ def test_voltage_write_sends_number():
     )
     assert result.applied
     assert cloud.writes == [("setBatteryFloatChargingVoltage", 13.6)]
+
+
+# ---------------------------------------------------------------------------
+# Hardening: battery cross-check, unparseable responses, auth rejection
+# ---------------------------------------------------------------------------
+
+
+def test_battery_nominal_contradicting_live_voltage_is_rejected():
+    cloud = FakeCloud(VOLTAGES, battery_voltage=12.8)
+    with pytest.raises(ConfigValidationError, match="contradicts"):
+        run(
+            cloud,
+            "setBatteryFloatChargingVoltage",
+            27.2,
+            access=ConfigAccess.CRITICAL,
+            battery_nominal_voltage=24,
+        )
+    assert cloud.writes == []
+
+
+def test_battery_voltage_unavailable_fails_closed():
+    cloud = FakeCloud(VOLTAGES, battery_voltage=None)
+    with pytest.raises(ConfigValidationError, match="unavailable"):
+        run(
+            cloud,
+            "setBatteryFloatChargingVoltage",
+            13.6,
+            access=ConfigAccess.CRITICAL,
+            battery_nominal_voltage=12,
+        )
+    assert cloud.writes == []
+
+
+def test_battery_cross_check_can_be_disabled():
+    cloud = FakeCloud(VOLTAGES, battery_voltage=None)
+    result = run(
+        cloud,
+        "setBatteryFloatChargingVoltage",
+        13.6,
+        access=ConfigAccess.CRITICAL,
+        battery_nominal_voltage=12,
+        verify_battery_voltage=False,
+    )
+    assert result.applied
+
+
+def test_non_voltage_write_does_not_query_state():
+    cloud = FakeCloud({"buzzerEnabled": "0"}, battery_voltage=None)
+    assert run(cloud, "buzzerEnabled", 1).applied
+
+
+@pytest.mark.parametrize("applied", [True, False])
+def test_unparseable_write_response_goes_through_readback(applied):
+    cloud = FakeCloud(
+        {"buzzerEnabled": "0"},
+        write_error=InvalidResponseError("bad json"),
+        apply_on_error=applied,
+    )
+    result = run(cloud, "buzzerEnabled", 1)
+    expected = ConfigWriteStatus.APPLIED if applied else ConfigWriteStatus.UNKNOWN
+    assert result.status is expected
+    assert len(cloud.writes) == 1  # never retried
+
+
+def test_authentication_error_on_write_is_rejected():
+    cloud = FakeCloud(
+        {"buzzerEnabled": "0"},
+        write_error=AuthenticationError("no", http_status=403),
+    )
+    with pytest.raises(ConfigRejected) as info:
+        run(cloud, "buzzerEnabled", 1)
+    assert info.value.code == 403
+
+
+def test_write_non_dict_response_raises_invalid_response():
+    async def request(*args, **kwargs):
+        return ["unexpected"]
+
+    with pytest.raises(InvalidResponseError):
+        asyncio.run(write_device_config(request, "d", key="buzzerEnabled", value=1))
+
+
+def test_check_battery_nominal_accepts_plausible_values():
+    check_battery_nominal(12, 13.8)
+    check_battery_nominal(48, 52.1)
+    with pytest.raises(ConfigValidationError):
+        check_battery_nominal(48, "n/a")
+    with pytest.raises(ConfigValidationError):
+        check_battery_nominal(12, 0)
+
+
+def test_write_request_is_flagged_non_retryable():
+    seen = {}
+
+    async def request(method, path, **kwargs):
+        seen.update(kwargs)
+
+    asyncio.run(write_device_config(request, "d", key="buzzerEnabled", value="1"))
+    assert seen["retry"] is False

@@ -53,3 +53,25 @@ class NetworkError(SiseliError):
     def __init__(self, message: str = "", *, http_status: int | None = None) -> None:
         self.http_status = http_status
         super().__init__(message)
+
+
+class RateLimitError(NetworkError):
+    """Raised when the server throttles the client (HTTP 429).
+
+    Attributes:
+        retry_after: Seconds suggested by the ``Retry-After`` header, if any.
+    """
+
+    def __init__(
+        self,
+        message: str = "",
+        *,
+        http_status: int | None = 429,
+        retry_after: float | None = None,
+    ) -> None:
+        self.retry_after = retry_after
+        super().__init__(message, http_status=http_status)
+
+
+class InvalidResponseError(SiseliError):
+    """Raised when a response is not valid JSON or lacks the expected shape."""

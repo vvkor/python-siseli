@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import builtins
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
@@ -71,15 +72,15 @@ class SummaryProperty:
     has_real_time_points: bool | None
     raw: dict = field(repr=False)
 
-    @property
+    @builtins.property
     def key(self) -> str:
         return self.property.get("key", "")
 
-    @property
+    @builtins.property
     def unit(self) -> str:
         return self.property.get("unit") or self.property.get("unitI18n", {}).get("en", "")
 
-    @property
+    @builtins.property
     def latest_value(self) -> float | None:
         """Value of the last time point, or None when the series is empty."""
         for point in reversed(self.time_points):
