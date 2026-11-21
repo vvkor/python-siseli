@@ -5,24 +5,32 @@ from __future__ import annotations
 import asyncio
 import time
 import weakref
-from typing import Any, Awaitable, Callable
+from collections.abc import Awaitable, Callable
+from typing import Any
 
-from ._utils import parse_datetime
+from ._utils import as_dict, parse_datetime
 from .config_safety import (
     ConfigAccess,
     ConfigAccessDenied,
     ConfigRejected,
+    ConfigValidationError,
     ConfigWriteResult,
     ConfigWriteStatus,
+    check_battery_nominal,
     get_spec,
     related_keys,
     validate_config_value,
     values_equal,
 )
-from .exceptions import ApiError, NetworkError, SiseliError
+from .exceptions import (
+    ApiError,
+    AuthenticationError,
+    InvalidResponseError,
+    NetworkError,
+)
 from .models.config import ConfigBatchRead
 from .models.state import AttributeMetadata
-from .state import _parse_attribute_metadata
+from .state import _parse_attribute_metadata, fetch_device_state
 
 RequestFunc = Callable[..., Awaitable[Any]]
 
@@ -35,6 +43,7 @@ def _parse_config_map(raw: dict[str, dict] | None) -> dict[str, AttributeMetadat
 
 
 def _parse_batch_read(raw: dict) -> ConfigBatchRead:
+    raw = as_dict(raw)
     target_config = raw.get("targetConfig")
     return ConfigBatchRead(
         id=raw.get("id", ""),
@@ -67,7 +76,7 @@ async def fetch_device_config(
         params={"deviceId": device_id},
         json={"id": config_id or device_id, "key": key},
     )
-    return _parse_attribute_metadata(data, key)
+    return _parse_attribute_metadata(as_dict(data), key)
 
 
 async def write_device_config(
@@ -87,11 +96,14 @@ async def write_device_config(
         "/apis/remote/device/config/write",
         params={"deviceId": device_id},
         json={"id": config_id or device_id, "key": key, "value": value},
+        retry=False,
     )
     if data is None:
         return None
     if not isinstance(data, dict):
-        raise SiseliError(f"Unexpected config write response type: {type(data).__name__}")
+        raise InvalidResponseError(
+            f"Unexpected config write response type: {type(data).__name__}"
+        )
     return _parse_attribute_metadata(data, key)
 
 
@@ -171,12 +183,19 @@ async def safe_write_device_config(
     battery_nominal_voltage: int | None = None,
     dry_run: bool = False,
     min_interval: float = MIN_WRITE_INTERVAL,
+    verify_battery_voltage: bool = True,
 ) -> ConfigWriteResult:
     """Validate, write once and verify a configuration value.
 
     The write is never retried. If the cloud times out or the response cannot
     be parsed, the outcome is checked by reading the key back; when that is
     inconclusive the result is ``UNKNOWN`` rather than success.
+
+    Keys whose limits scale with the battery bank are additionally checked
+    against the live ``batteryVoltage`` (disable with
+    ``verify_battery_voltage=False``). Note that read-back goes through the
+    cloud ``config/read`` endpoint, so ``APPLIED`` means the cloud reports the
+    new value, which may itself be served from a cloud-side cache.
     """
     spec = get_spec(key)
     if spec.risk > access:
@@ -185,6 +204,16 @@ async def safe_write_device_config(
     lock = _device_lock(device_id)
     async with lock:
         # Fail closed: any read needed for safety checks must succeed.
+        if spec.scales_with_battery and verify_battery_voltage:
+            if battery_nominal_voltage is None:
+                raise ConfigValidationError(
+                    f"battery nominal voltage must be specified explicitly for {key}"
+                )
+            live = await fetch_device_state(request, device_id)
+            attribute = live.get("batteryVoltage")
+            check_battery_nominal(
+                battery_nominal_voltage, attribute.value if attribute else None
+            )
         previous = await _read_value(request, device_id, key)
         related: dict[str, Any] = {}
         for other in related_keys(key):
@@ -218,6 +247,14 @@ async def safe_write_device_config(
             if exc.code not in _UNKNOWN_OUTCOME_CODES:
                 raise ConfigRejected(exc.code, exc.message) from exc
             error_code, message = exc.code, exc.message
+        except InvalidResponseError as exc:
+            # The write may have been processed; the read-back decides.
+            message = str(exc)
+        except AuthenticationError as exc:
+            # Rejected before processing (HTTP 401/403 after a re-login).
+            raise ConfigRejected(
+                exc.http_status or 401, "authentication rejected the write"
+            ) from exc
         except NetworkError as exc:
             status = exc.http_status
             if status is not None and 400 <= status < 500 and status not in (408, 429):

@@ -15,7 +15,11 @@ from siseli.dashboard import fetch_dashboard_summary
 from siseli.dictionary import fetch_dictionary
 from siseli.history import fetch_attribute_history, fetch_state_history
 from siseli.state import fetch_device_attribute_groups, fetch_device_attributes
-from siseli.station import fetch_station_energy_flow, fetch_station_list, fetch_station_state_summary
+from siseli.station import (
+    fetch_station_energy_flow,
+    fetch_station_list,
+    fetch_station_state_summary,
+)
 
 
 @pytest.mark.asyncio

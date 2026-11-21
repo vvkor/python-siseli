@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
-from typing import Any, Awaitable, Callable
+from collections.abc import Awaitable, Callable
+from typing import Any
 
-from ._utils import parse_datetime, serialize_datetime
+from ._utils import as_dict, as_list, parse_datetime, serialize_datetime
 from .const import DEFAULT_PAGE_SIZE
 from .models.alarm import Alarm, AlarmReport
 from .models.common import PagedResult
@@ -100,7 +101,8 @@ async def fetch_alarm_list(
             "orderByCreatedTimeDesc": order_by_created_time_desc,
         },
     )
-    items = [_parse_alarm(item) for item in data.get("list", [])]
+    data = as_dict(data)
+    items = [_parse_alarm(item) for item in as_list(data.get("list"))]
     return PagedResult(
         page=data.get("page", page),
         count=data.get("count", count),
@@ -149,7 +151,8 @@ async def fetch_alarm_reports(
             "orderByCreatedAtAsc": order_by_created_at_asc,
         },
     )
-    items = [_parse_alarm_report(item) for item in data.get("list", [])]
+    data = as_dict(data)
+    items = [_parse_alarm_report(item) for item in as_list(data.get("list"))]
     return PagedResult(
         page=data.get("page", page),
         count=data.get("count", count),

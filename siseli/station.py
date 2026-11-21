@@ -2,12 +2,19 @@
 
 from __future__ import annotations
 
-from typing import Any, Awaitable, Callable
+from collections.abc import Awaitable, Callable
+from typing import Any
 
-from ._utils import parse_datetime, serialize_datetime
+from ._utils import as_dict, as_list, parse_datetime, serialize_datetime, validate_path_segment
 from .const import DEFAULT_PAGE_SIZE
 from .models.common import PagedResult, TimePoint
-from .models.station import Station, StationEnergyFlow, StationSummary, SummaryCategory, SummaryProperty
+from .models.station import (
+    Station,
+    StationEnergyFlow,
+    StationSummary,
+    SummaryCategory,
+    SummaryProperty,
+)
 from .state import _parse_flow_node
 
 RequestFunc = Callable[..., Awaitable[Any]]
@@ -64,14 +71,15 @@ def _parse_summary_category(raw: dict | None) -> SummaryCategory | None:
 
 
 def _parse_station_summary(raw: dict) -> StationSummary:
+    raw = as_dict(raw)
     properties = [
         SummaryProperty(
             property=item.get("property", {}),
-            time_points=[_parse_time_point(point) for point in item.get("timePoints", [])],
+            time_points=[_parse_time_point(point) for point in as_list(item.get("timePoints"))],
             has_real_time_points=item.get("hasRealTimePoints"),
             raw=item,
         )
-        for item in raw.get("properties", [])
+        for item in as_list(raw.get("properties"))
     ]
     return StationSummary(
         category=_parse_summary_category(raw.get("category")),
@@ -104,7 +112,8 @@ async def fetch_station_list(
             "stationType": station_type,
         },
     )
-    items = [_parse_station(item) for item in data.get("list", [])]
+    data = as_dict(data)
+    items = [_parse_station(item) for item in as_list(data.get("list"))]
     return PagedResult(
         page=data.get("page", page),
         count=data.get("count", count),
@@ -132,6 +141,7 @@ async def fetch_station_energy_flow(
         "/apis/station/energy/flow",
         params={"stationId": station_id, "isManualRefresh": is_manual_refresh},
     )
+    data = as_dict(data)
     return StationEnergyFlow(
         is_support_flow=data.get("isSupportFlow", False),
         time=parse_datetime(data.get("time")),
@@ -154,13 +164,14 @@ async def fetch_station_income(
     time: Any = None,
 ) -> list[TimePoint]:
     """Return aggregated station income points."""
+    validate_path_segment(aggregation, "aggregation")
     data = await request(
         "POST",
         f"/apis/stationOverView/income/{aggregation}",
         params={"stationId": station_id},
         json={"time": serialize_datetime(time)},
     )
-    return [_parse_time_point(item) for item in data]
+    return [_parse_time_point(item) for item in as_list(data)]
 
 
 async def fetch_station_state_summary(
@@ -172,6 +183,7 @@ async def fetch_station_state_summary(
     time: Any = None,
 ) -> StationSummary:
     """Return aggregated station summary metrics."""
+    validate_path_segment(aggregation, "aggregation")
     data = await request(
         "POST",
         f"/apis/stationOverView/stateAttributeSummary/category/{aggregation}",

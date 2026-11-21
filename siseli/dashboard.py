@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
-from typing import Any, Awaitable, Callable
+from collections.abc import Awaitable, Callable
+from typing import Any
 
+from ._utils import as_dict, as_list
 from .models.common import CountByValue, TimePoint
 from .models.dashboard import DashboardSummary, LocationDistribution, StationRankEntry
 from .station import _parse_time_point
@@ -13,7 +15,7 @@ RequestFunc = Callable[..., Awaitable[Any]]
 
 async def fetch_dashboard_summary(request: RequestFunc) -> DashboardSummary:
     """Return top-level dashboard summary metrics."""
-    data = await request("POST", "/apis/dashboard/summary/commons", json={})
+    data = as_dict(await request("POST", "/apis/dashboard/summary/commons", json={}))
     return DashboardSummary(
         daily_produced_quantity=data.get("dailyProducedQuantity"),
         total_produced_quantity=data.get("totalProducedQuantity"),
@@ -32,7 +34,7 @@ async def fetch_dashboard_summary(request: RequestFunc) -> DashboardSummary:
                 label=item.get("stateDict"),
                 raw=item,
             )
-            for item in data.get("stationStateSummary", [])
+            for item in as_list(data.get("stationStateSummary"))
         ],
         raw=data,
     )
@@ -52,7 +54,7 @@ async def fetch_dashboard_daily_generation_time_rank(
     )
     return [
         StationRankEntry(name=item.get("name", ""), full_time=item.get("fullTime"), raw=item)
-        for item in data
+        for item in as_list(data)
     ]
 
 
@@ -84,7 +86,7 @@ async def fetch_dashboard_station_distribution(
             latitude=item.get("latitude"),
             raw=item,
         )
-        for item in data
+        for item in as_list(data)
     ]
 
 
@@ -97,4 +99,4 @@ async def fetch_dashboard_monthly_generated_energy(
         "/apis/dashboard/summary/station/generatedEnergy/monthly",
         json={},
     )
-    return [_parse_time_point(item) for item in data]
+    return [_parse_time_point(item) for item in as_list(data)]

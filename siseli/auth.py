@@ -4,11 +4,17 @@ from __future__ import annotations
 
 import hashlib
 import logging
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 import httpx
 
-from .exceptions import AuthenticationError, NetworkError
+from ._utils import parse_datetime
+from .exceptions import (
+    AuthenticationError,
+    InvalidResponseError,
+    NetworkError,
+    RateLimitError,
+)
 from .models.auth import TokenInfo
 
 _LOGGER = logging.getLogger(__name__)
@@ -22,10 +28,15 @@ def _md5(text: str) -> str:
     return hashlib.md5(text.encode()).hexdigest()  # noqa: S324
 
 
-def _parse_dt(value: str | None) -> datetime | None:
-    if not value:
-        return None
-    return datetime.fromisoformat(value.replace("Z", "+00:00"))
+def _mask_account(account: str) -> str:
+    """Obfuscate the account for logs: ``user@example.com`` -> ``u***@example.com``."""
+    local, sep, domain = account.partition("@")
+    masked = f"{local[:1]}***" if local else "***"
+    return f"{masked}{sep}{domain}"
+
+
+# Treat tokens as expired slightly early to avoid racing the server clock.
+EXPIRY_MARGIN = timedelta(seconds=30)
 
 
 def _extract_api_message(response: httpx.Response) -> str | None:
@@ -44,10 +55,17 @@ def _extract_api_message(response: httpx.Response) -> str | None:
                 value = body.get(key)
                 if value and isinstance(value, str):
                     return value[:200]
-    except Exception:  # noqa: BLE001
+    except Exception:  # noqa: BLE001, S110
         pass
     text = (response.text or "").strip()
     return text[:200] if text else None
+
+
+def _retry_after_seconds(response: httpx.Response) -> float | None:
+    try:
+        return max(0.0, float(response.headers.get("Retry-After", "")))
+    except ValueError:
+        return None
 
 
 class Auth:
@@ -59,6 +77,7 @@ class Auth:
 
     def __init__(self, account: str, password: str) -> None:
         self._account = account
+        self._masked = _mask_account(account)
         # The web client sends the MD5 hash of the plaintext password.
         self._password_hash = _md5(password)
         self._token_info: TokenInfo | None = None
@@ -71,7 +90,7 @@ class Auth:
         on network / timeout errors so callers can distinguish the two cases.
         """
         endpoint = "/apis/login/account"
-        _LOGGER.debug("Siseli auth: POST %s (account=%r)", endpoint, self._account)
+        _LOGGER.debug("Siseli auth: POST %s (account=%s)", endpoint, self._masked)
 
         try:
             response = await http.post(
@@ -79,17 +98,17 @@ class Auth:
                 json={"account": self._account, "password": self._password_hash},
             )
         except httpx.TimeoutException as exc:
-            _LOGGER.warning("Siseli auth: request timed out for account=%r", self._account)
+            _LOGGER.warning("Siseli auth: request timed out for account=%s", self._masked)
             raise NetworkError(f"Login request timed out: {exc}") from exc
         except httpx.HTTPError as exc:
             _LOGGER.warning(
-                "Siseli auth: network error for account=%r: %s", self._account, exc
+                "Siseli auth: network error for account=%s: %s", self._masked, exc
             )
             raise NetworkError(f"Login request failed: {exc}") from exc
 
         http_status = response.status_code
         _LOGGER.debug(
-            "Siseli auth: response status=%d for account=%r", http_status, self._account
+            "Siseli auth: response status=%d for account=%s", http_status, self._masked
         )
 
         # For HTTP error responses, extract a safe diagnostic message and raise
@@ -97,31 +116,43 @@ class Auth:
         if not response.is_success:
             api_message = _extract_api_message(response)
             _LOGGER.warning(
-                "Siseli auth: failed for account=%r — HTTP %d%s",
-                self._account,
+                "Siseli auth: failed for account=%s — HTTP %d%s",
+                self._masked,
                 http_status,
                 f", api_message={api_message!r}" if api_message else "",
             )
             diag = f"HTTP {http_status}"
             if api_message:
                 diag = f"{diag}: {api_message}"
-            if http_status >= 500:
-                raise NetworkError(f"Login request failed: {diag}")
+            if http_status == 429:
+                raise RateLimitError(
+                    f"Login request failed: {diag}",
+                    retry_after=_retry_after_seconds(response),
+                )
+            if http_status >= 500 or http_status == 408:
+                raise NetworkError(
+                    f"Login request failed: {diag}", http_status=http_status
+                )
             raise AuthenticationError(
                 f"Login failed: {diag}",
                 http_status=http_status,
                 api_message=api_message,
             )
 
-        body = response.json()
+        try:
+            body = response.json()
+        except ValueError as exc:
+            raise InvalidResponseError("Login response is not valid JSON") from exc
+        if not isinstance(body, dict):
+            raise InvalidResponseError("Login response has unexpected shape")
         if body.get("code") != 0:
             api_message = body.get("message") or body.get("error") or body.get("detail")
             if api_message:
                 api_message = str(api_message)
             _LOGGER.warning(
-                "Siseli auth: API returned non-zero code=%r for account=%r, message=%r",
+                "Siseli auth: API returned non-zero code=%r for account=%s, message=%r",
                 body.get("code"),
-                self._account,
+                self._masked,
                 api_message,
             )
             raise AuthenticationError(
@@ -130,17 +161,23 @@ class Auth:
                 api_message=api_message,
             )
 
-        data = body["data"]
+        data = body.get("data")
+        if (
+            not isinstance(data, dict)
+            or not data.get("accessToken")
+            or not data.get("refreshToken")
+        ):
+            raise InvalidResponseError("Login response is missing tokens")
         self._token_info = TokenInfo(
             access_token=data["accessToken"],
             refresh_token=data["refreshToken"],
-            access_token_expires_at=_parse_dt(data.get("accessTokenWillExpiredAt")),
-            refresh_token_expires_at=_parse_dt(data.get("refreshTokenWillExpiredAt")),
+            access_token_expires_at=parse_datetime(data.get("accessTokenWillExpiredAt")),
+            refresh_token_expires_at=parse_datetime(data.get("refreshTokenWillExpiredAt")),
             auth_id=data.get("authId", ""),
             account=data.get("account", self._account),
             user_id=data.get("userId", ""),
         )
-        _LOGGER.debug("Siseli auth: login successful for account=%r", self._account)
+        _LOGGER.debug("Siseli auth: login successful for account=%s", self._masked)
         return self._token_info
 
     @property
@@ -154,6 +191,10 @@ class Auth:
             raise AuthenticationError("Not authenticated — call authenticate() first")
         return self._token_info.access_token
 
+    def invalidate(self) -> None:
+        """Forget the current token so the next call logs in again."""
+        self._token_info = None
+
     @property
     def token_info(self) -> TokenInfo | None:
         """Return token metadata, or *None* if not authenticated."""
@@ -166,4 +207,4 @@ class Auth:
         expires_at = self._token_info.access_token_expires_at
         if expires_at is None:
             return True
-        return datetime.now(UTC) < expires_at
+        return datetime.now(UTC) + EXPIRY_MARGIN < expires_at

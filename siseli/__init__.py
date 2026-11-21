@@ -16,7 +16,9 @@ from .config_safety import (
 from .exceptions import (
     ApiError,
     AuthenticationError,
+    InvalidResponseError,
     NetworkError,
+    RateLimitError,
     SiseliError,
     TokenExpiredError,
 )
@@ -60,6 +62,8 @@ __all__ = [
     "TokenExpiredError",
     "ApiError",
     "NetworkError",
+    "RateLimitError",
+    "InvalidResponseError",
     "Alarm",
     "AlarmReport",
     "AttributeGroup",

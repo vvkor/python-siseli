@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
-from typing import Any, Awaitable, Callable, Iterable
+from collections.abc import Awaitable, Callable, Iterable
+from typing import Any
 
-from ._utils import extract_value, parse_datetime, serialize_datetime
+from ._utils import as_dict, as_list, extract_value, parse_datetime, serialize_datetime
 from .const import DEFAULT_PAGE_SIZE
 from .models.history import HistoryRecord, HistorySeries
 
@@ -37,6 +38,30 @@ def _build_history_records(
     return records
 
 
+def _build_series(
+    data: Any, page: int, count: int, *, keep_formatters: bool
+) -> HistorySeries:
+    data = as_dict(data)
+    payload = as_dict(data.get("payload"))
+    raw_fields = {
+        key: as_list(values) for key, values in as_dict(payload.get("fields")).items()
+    }
+    time_series = as_list(payload.get("timeSeries"))
+    return HistorySeries(
+        page=data.get("page", page),
+        count=data.get("count", count),
+        total=data.get("total", len(time_series)),
+        time_series=[parse_datetime(value) for value in time_series],
+        fields={
+            key: [extract_value(value) for value in values]
+            for key, values in raw_fields.items()
+        },
+        formatters=as_dict(payload.get("formatters")) if keep_formatters else {},
+        records=_build_history_records(time_series, raw_fields),
+        raw=data,
+    )
+
+
 async def fetch_attribute_history(
     request: RequestFunc,
     device_id: str,
@@ -62,23 +87,7 @@ async def fetch_attribute_history(
             "orderByTimeAsc": order_by_time_asc,
         },
     )
-    payload = data.get("payload", {})
-    raw_fields = payload.get("fields", {})
-    time_series = payload.get("timeSeries", [])
-    normalized_fields = {
-        key: [extract_value(value) for value in values]
-        for key, values in raw_fields.items()
-    }
-    return HistorySeries(
-        page=data.get("page", page),
-        count=data.get("count", count),
-        total=data.get("total", len(time_series)),
-        time_series=[parse_datetime(value) for value in time_series],
-        fields=normalized_fields,
-        formatters=payload.get("formatters", {}),
-        records=_build_history_records(time_series, raw_fields),
-        raw=data,
-    )
+    return _build_series(data, page, count, keep_formatters=True)
 
 
 async def fetch_state_history(
@@ -104,20 +113,4 @@ async def fetch_state_history(
             "orderByTimeAsc": order_by_time_asc,
         },
     )
-    payload = data.get("payload", {})
-    raw_fields = payload.get("fields", {})
-    time_series = payload.get("timeSeries", [])
-    normalized_fields = {
-        key: [extract_value(value) for value in values]
-        for key, values in raw_fields.items()
-    }
-    return HistorySeries(
-        page=data.get("page", page),
-        count=data.get("count", count),
-        total=data.get("total", len(time_series)),
-        time_series=[parse_datetime(value) for value in time_series],
-        fields=normalized_fields,
-        formatters={},
-        records=_build_history_records(time_series, raw_fields),
-        raw=data,
-    )
+    return _build_series(data, page, count, keep_formatters=False)

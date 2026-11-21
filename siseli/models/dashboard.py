@@ -3,9 +3,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any
 
-from .common import CountByValue, TimePoint
+from .common import CountByValue
 
 
 @dataclass

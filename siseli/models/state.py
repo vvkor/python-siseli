@@ -110,13 +110,21 @@ class DeviceState:
             return text.strip() or None if isinstance(text, str) else None
 
         def power_watts(api_key: str) -> float | None:
-            # The API reports power as kW unless the unit is explicitly W.
+            # The API reports power in kW (the unit may be blank) or W; any
+            # other unit is unknown, so no value is better than a wrong one.
             result = number(api_key)
             attribute = self.fields.get(api_key)
             if result is None or attribute is None:
                 return result
-            return result if attribute.unit == "W" else result * 1000
+            unit = (attribute.unit or "").strip().lower()
+            if unit == "w":
+                return result
+            if unit in ("", "kw"):
+                return result * 1000
+            return None
 
+        # Battery power sign: positive while charging, negative while
+        # discharging (charging current minus discharge current).
         voltage = number("batteryVoltage")
         charging = number("batteryChargingCurrent")
         discharging = number("batteryDischargeCurrent")
@@ -148,7 +156,9 @@ class DeviceState:
             "inverter_state": value("workingMode"),
             "inverter_mode": display("workingMode"),
             "load_percent": number("outputLoadPercent"),
+            # Deprecated alias: this is the *rated* value, not the live load.
             "load_apparent_power": number("ratedApparentPower"),
+            "rated_apparent_power": number("ratedApparentPower"),
             "heat_sink_temperature": number("inverterHeatSinkTemperature"),
             "bus_voltage": number("busVoltage"),
             "charging_status": display("chargingStatus"),

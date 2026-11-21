@@ -2,18 +2,13 @@
 
 from __future__ import annotations
 
-from datetime import datetime
-from typing import Any, Awaitable, Callable
+from collections.abc import Awaitable, Callable
+from typing import Any
 
+from ._utils import as_dict, as_list, parse_datetime
 from .models.device import Device
 
 RequestFunc = Callable[..., Awaitable[Any]]
-
-
-def _dt(value: str | None) -> datetime | None:
-    if not value:
-        return None
-    return datetime.fromisoformat(value.replace("Z", "+00:00"))
 
 
 def _parse_device(raw: dict) -> Device:
@@ -31,9 +26,9 @@ def _parse_device(raw: dict) -> Device:
         producing_power=raw.get("producingPower", 0.0),
         model=raw.get("model"),
         software_version=raw.get("softwareVersion"),
-        last_data_at=_dt(raw.get("lastDataAt")),
-        last_online_at=_dt(raw.get("lastOnlineAt")),
-        created_at=_dt(raw.get("createdAt")),
+        last_data_at=parse_datetime(raw.get("lastDataAt")),
+        last_online_at=parse_datetime(raw.get("lastOnlineAt")),
+        created_at=parse_datetime(raw.get("createdAt")),
         raw=raw,
     )
 
@@ -74,7 +69,8 @@ async def fetch_device_list(
             "applyModeCategory": 1,
         },
     )
-    devices = [_parse_device(d) for d in data.get("list", [])]
+    data = as_dict(data)
+    devices = [_parse_device(d) for d in as_list(data.get("list"))]
     total: int = data.get("total", len(devices))
     return devices, total
 

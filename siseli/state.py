@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
-from typing import Any, Awaitable, Callable
+from collections.abc import Awaitable, Callable
+from typing import Any
 
-from ._utils import parse_datetime
+from ._utils import as_dict, as_list, parse_datetime
 from .const import DEFAULT_DATA_SOURCE
 from .models.common import LookupValue
 from .models.state import (
@@ -31,12 +32,20 @@ def _parse_lookup_value(raw: dict) -> LookupValue:
 
 
 
+def _display(raw: dict) -> str:
+    shown = raw.get("valueDisplay")
+    if shown is not None:
+        return str(shown)
+    value = raw.get("value")
+    return "" if value is None else str(value)
+
+
 def _parse_attribute(key: str, raw: dict) -> StateAttribute:
     return StateAttribute(
         key=raw.get("key", key),
         unit=raw.get("unit", ""),
         value=raw.get("value"),
-        value_display=raw.get("valueDisplay", str(raw.get("value", ""))),
+        value_display=_display(raw),
         name_display=raw.get("nameDisplay", raw.get("name", "")),
         is_hidden=raw.get("isHidden"),
     )
@@ -44,7 +53,7 @@ def _parse_attribute(key: str, raw: dict) -> StateAttribute:
 
 
 def _parse_attribute_metadata(raw: dict, key: str = "") -> AttributeMetadata:
-    enum_values = [_parse_lookup_value(item) for item in raw.get("enumValues", [])]
+    enum_values = [_parse_lookup_value(item) for item in as_list(raw.get("enumValues"))]
     return AttributeMetadata(
         key=raw.get("key", key),
         name=raw.get("name", raw.get("nameDisplay", "")),
@@ -72,14 +81,15 @@ def _parse_attribute_group(raw: dict) -> AttributeGroup:
         category=raw.get("category"),
         name=raw.get("name", ""),
         description=raw.get("description", ""),
-        attributes=[_parse_attribute_metadata(item) for item in raw.get("attributes", [])],
+        attributes=[_parse_attribute_metadata(item) for item in as_list(raw.get("attributes"))],
         raw=raw,
     )
 
 
 
-def _parse_device_state(raw: dict) -> DeviceState:
-    fields_raw: dict = raw.get("fields", {})
+def _parse_device_state(raw: Any) -> DeviceState:
+    raw = as_dict(raw)
+    fields_raw: dict = as_dict(raw.get("fields"))
     fields = {key: _parse_attribute(key, attr) for key, attr in fields_raw.items()}
     return DeviceState(
         time=parse_datetime(raw.get("time")),
@@ -93,8 +103,12 @@ def _parse_flow_node(raw: dict | None) -> FlowNode | None:
     if raw is None:
         return None
     value_raw = raw.get("value")
-    value = _parse_attribute(raw.get("key", ""), value_raw) if value_raw else None
-    extra_values = [_parse_attribute(item.get("key", ""), item) for item in raw.get("extraValues", [])]
+    value = _parse_attribute(raw.get("key", ""), value_raw) if isinstance(value_raw, dict) else None
+    extra_values = [
+        _parse_attribute(item.get("key", ""), item)
+        for item in as_list(raw.get("extraValues"))
+        if isinstance(item, dict)
+    ]
     return FlowNode(
         key=raw.get("key", ""),
         locale_title=raw.get("localeTitle", ""),
@@ -135,7 +149,7 @@ async def fetch_device_attributes(
         "/apis/deviceState/simple/gatherAttributes/v1",
         params={"deviceId": device_id, "category": category, "renderIn": render_in},
     )
-    return [_parse_attribute_metadata(item) for item in data]
+    return [_parse_attribute_metadata(item) for item in as_list(data)]
 
 
 async def fetch_device_attribute_groups(
@@ -151,9 +165,10 @@ async def fetch_device_attribute_groups(
         "/apis/device/query/attribute/group",
         params={"deviceId": device_id, "category": category, "renderIn": render_in},
     )
+    data = as_dict(data)
     return AttributeGroupSet(
         gather_protocol_version_id=data.get("gatherProtocolVersionId", ""),
-        groups=[_parse_attribute_group(item) for item in data.get("attributesGroups", [])],
+        groups=[_parse_attribute_group(item) for item in as_list(data.get("attributesGroups"))],
         raw=data,
     )
 
@@ -170,7 +185,8 @@ async def fetch_energy_flow(
         "/apis/deviceState/simple/energy/flow/v1",
         params={"deviceId": device_id, "dataSource": data_source},
     )
-    device_state = _parse_device_state(data.get("deviceAttributeState", {}))
+    data = as_dict(data)
+    device_state = _parse_device_state(data.get("deviceAttributeState"))
     return EnergyFlow(
         device_state=device_state,
         pv_panel=_parse_flow_node(data.get("pvPanelFlow")),
