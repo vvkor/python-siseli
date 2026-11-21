@@ -42,6 +42,11 @@ jobs:
           print(f"Using version {version}")
           PY
 
+      - name: Run tests before publishing
+        run: |
+          pip install -e ".[dev]"
+          pytest -q
+
       - name: Install build
         run: pip install build
 
